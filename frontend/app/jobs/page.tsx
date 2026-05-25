@@ -16,7 +16,6 @@ function recommendationWeight(recommendation?: string | null) {
   return 1;
 }
 
-const weeklyBars = [34, 48, 42, 71, 59, 78, 64];
 const pipelineMix = [
   { label: "Queued", color: "bg-blue-500" },
   { label: "Processing", color: "bg-amber-500" },
@@ -196,64 +195,68 @@ export default function JobsPage() {
       }
     >
       <div className="space-y-6">
-        <Panel title="Analysis Queue Progress" subtitle="Live queue depth and current candidate run progression.">
-          <div className="mt-1 grid gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 xl:grid-cols-[1.4fr_1fr]">
-            <div className="rounded-xl border border-slate-200 bg-white p-4">
-              <div className="mb-2 flex items-center justify-between text-sm text-slate-600">
-                <span>{queueStatus.current_candidate_name ? `Processing: ${queueStatus.current_candidate_name}` : "No active candidate processing"}</span>
-                <span className="font-semibold text-slate-900">{queueStatus.current_progress_percent.toFixed(0)}%</span>
+        <Panel title="Analysis Queue" subtitle="Live queue depth and current candidate run progression.">
+          <div className="mt-1 grid gap-4 xl:grid-cols-[1.6fr_1fr]">
+            {/* Progress section */}
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="truncate text-[13px] font-semibold text-slate-800">
+                    {queueStatus.current_candidate_name ? `Processing: ${queueStatus.current_candidate_name}` : "No candidate processing"}
+                  </div>
+                  {queueStatus.current_job_posting_title ? (
+                    <div className="mt-0.5 truncate text-[12px] text-slate-500">For: {queueStatus.current_job_posting_title}</div>
+                  ) : null}
+                </div>
+                <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ${queueStatus.current_status === "processing" ? "bg-blue-50 text-accent" : "bg-slate-200 text-slate-500"}`}>
+                  {queueStatus.current_status === "processing" ? "Running" : "Idle"}
+                </span>
               </div>
-              <div className="h-3 w-full overflow-hidden rounded-full bg-slate-200">
+
+              <div className="h-2 w-full overflow-hidden rounded-full bg-slate-200">
                 <div
                   className="h-full rounded-full bg-accent transition-all duration-500"
                   style={{ width: `${Math.max(0, Math.min(100, queueStatus.current_progress_percent))}%` }}
                 />
               </div>
-              <div className="mt-2 text-xs text-slate-500">
-                {queueStatus.current_stage || "Pipeline idle. Queue a candidate analysis from candidate pages."}
-              </div>
-              {queueStatus.current_job_posting_title ? (
-                <div className="mt-1 text-xs text-slate-500">For job posting: {queueStatus.current_job_posting_title}</div>
-              ) : null}
-              <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
-                <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">7-Day Throughput</div>
-                <div className="flex items-end gap-2">
-                  {weeklyBars.map((value, idx) => (
-                    <div key={`${value}-${idx}`} className="flex flex-1 flex-col items-center gap-1">
-                      <div className="w-full rounded-t bg-accent/80" style={{ height: `${value}px` }} />
-                      <span className="text-[10px] text-slate-400">{idx + 1}</span>
-                    </div>
-                  ))}
+              <div className="mt-1.5 flex items-center justify-between">
+                <div className="text-[12px] text-slate-500">
+                  {queueStatus.current_stage || "Queue a candidate analysis from candidate pages."}
                 </div>
+                <div className="text-[12px] font-semibold text-slate-700">{queueStatus.current_progress_percent.toFixed(0)}%</div>
               </div>
-            </div>
-            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
-              <div className="rounded-xl border border-slate-200 bg-white p-3">
-                <div className="text-xs uppercase tracking-[0.16em] text-slate-500">My Queue</div>
-                <div className="mt-1 font-heading text-3xl font-extrabold text-slate-900">{queueStatus.queue_size_user}</div>
-                <div className="text-xs text-slate-500">Candidates waiting in your workspace</div>
-              </div>
-              <div className="rounded-xl border border-slate-200 bg-white p-3">
-                <div className="text-xs uppercase tracking-[0.16em] text-slate-500">Total Queue</div>
-                <div className="mt-1 font-heading text-3xl font-extrabold text-slate-900">{queueStatus.queue_size_total}</div>
-                <div className="text-xs text-slate-500">All queued analysis jobs</div>
-              </div>
-              <div className="rounded-xl border border-slate-200 bg-white p-3 sm:col-span-2 xl:col-span-1">
-                <div className="text-xs uppercase tracking-[0.16em] text-slate-500">Pipeline Mix</div>
-                <div className="mt-3 space-y-2">
+
+              {/* Pipeline mix */}
+              <div className="mt-4 border-t border-slate-200 pt-4">
+                <div className="mb-2.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Pipeline status</div>
+                <div className="grid grid-cols-3 gap-2">
                   {pipelineMix.map((row, index) => {
                     const value = index === 0 ? queueStatus.queue_size_user : index === 1 ? (queueStatus.current_status === "processing" ? 1 : 0) : reports.length;
                     return (
-                      <div key={row.label} className="flex items-center justify-between text-xs text-slate-600">
-                        <div className="flex items-center gap-2">
-                          <span className={`h-2.5 w-2.5 rounded-full ${row.color}`} />
-                          <span>{row.label}</span>
+                      <div key={row.label} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-center">
+                        <div className="font-heading text-xl font-extrabold text-slate-900">{value}</div>
+                        <div className="mt-0.5 flex items-center justify-center gap-1.5">
+                          <span className={`h-1.5 w-1.5 rounded-full ${row.color}`} />
+                          <span className="text-[11px] text-slate-500">{row.label}</span>
                         </div>
-                        <span className="font-semibold text-slate-900">{value}</span>
                       </div>
                     );
                   })}
                 </div>
+              </div>
+            </div>
+
+            {/* Queue stats */}
+            <div className="grid grid-cols-2 gap-3 xl:grid-cols-1">
+              <div className="rounded-xl border border-slate-200 bg-white p-4">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">My Queue</div>
+                <div className="mt-1.5 font-heading text-4xl font-extrabold text-slate-900">{queueStatus.queue_size_user}</div>
+                <div className="mt-0.5 text-[12px] text-slate-500">Waiting in your workspace</div>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-white p-4">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Total Queue</div>
+                <div className="mt-1.5 font-heading text-4xl font-extrabold text-slate-900">{queueStatus.queue_size_total}</div>
+                <div className="mt-0.5 text-[12px] text-slate-500">All queued analysis jobs</div>
               </div>
             </div>
           </div>
@@ -273,29 +276,38 @@ export default function JobsPage() {
 
         <Panel title="Operational Snapshot" subtitle="Runtime performance indicators for queue and analysis execution.">
           <div className="grid gap-4 md:grid-cols-3">
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-              <div className="text-xs uppercase tracking-[0.16em] text-slate-500">Avg Pipeline Time</div>
-              <div className="mt-2 font-heading text-3xl font-extrabold text-slate-900">{formatMinutes(runtimeSnapshot.estimatedAvgMinutes)}</div>
-              <div className="mt-2 text-xs text-slate-500">Estimated average candidate analysis completion time.</div>
+            <div className="rounded-xl border border-slate-200 bg-white p-4">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Avg Pipeline Time</div>
+              <div className="mt-2 font-heading text-3xl font-extrabold text-slate-950">{formatMinutes(runtimeSnapshot.estimatedAvgMinutes)}</div>
+              <div className="mt-2 text-[12px] leading-5 text-slate-500">Estimated per-candidate analysis time end-to-end.</div>
             </div>
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-              <div className="text-xs uppercase tracking-[0.16em] text-slate-500">Queue Wait Estimate</div>
-              <div className="mt-2 font-heading text-3xl font-extrabold text-slate-900">
+            <div className="rounded-xl border border-slate-200 bg-white p-4">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Queue Wait</div>
+              <div className="mt-2 font-heading text-3xl font-extrabold text-slate-950">
                 {queueStatus.queue_size_total > 0 ? formatMinutes(runtimeSnapshot.waitMinutes) : "No wait"}
               </div>
-              <div className="mt-3 space-y-2 text-sm text-slate-600">
-                <div className="flex items-center justify-between"><span>Worker state</span><span className="font-semibold text-slate-900">{queueStatus.current_status || "idle"}</span></div>
-                <div className="flex items-center justify-between"><span>In-flight runs</span><span className="font-semibold text-slate-900">{runtimeSnapshot.inFlight}</span></div>
-                <div className="flex items-center justify-between"><span>Queue depth</span><span className="font-semibold text-slate-900">{queueStatus.queue_size_total}</span></div>
+              <div className="mt-3 space-y-1.5">
+                {[
+                  { label: "Worker", value: queueStatus.current_status || "idle" },
+                  { label: "In-flight", value: String(runtimeSnapshot.inFlight) },
+                  { label: "Depth", value: String(queueStatus.queue_size_total) },
+                ].map(({ label, value }) => (
+                  <div key={label} className="flex items-center justify-between text-[12px]">
+                    <span className="text-slate-500">{label}</span>
+                    <span className="font-semibold text-slate-800">{value}</span>
+                  </div>
+                ))}
               </div>
             </div>
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-              <div className="text-xs uppercase tracking-[0.16em] text-slate-500">Pipeline Reliability</div>
-              <div className="mt-2 font-heading text-3xl font-extrabold text-slate-900">{runtimeSnapshot.reliability}%</div>
-              <div className="mt-3 h-2 w-full rounded-full bg-slate-200">
-                <div className="h-2 rounded-full bg-emerald-500" style={{ width: `${Math.min(100, runtimeSnapshot.completionRate)}%` }} />
+            <div className="rounded-xl border border-slate-200 bg-white p-4">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Reliability</div>
+              <div className="mt-2 font-heading text-3xl font-extrabold text-slate-950">{runtimeSnapshot.reliability}%</div>
+              <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+                <div className="h-full rounded-full bg-mint transition-all duration-500" style={{ width: `${Math.min(100, runtimeSnapshot.completionRate)}%` }} />
               </div>
-              <div className="mt-2 text-xs text-slate-500">Completion ratio: {runtimeSnapshot.completionRate.toFixed(0)}% of candidates have final reports.</div>
+              <div className="mt-2 text-[12px] text-slate-500">
+                {runtimeSnapshot.completionRate.toFixed(0)}% of candidates have final reports.
+              </div>
             </div>
           </div>
         </Panel>
@@ -309,15 +321,17 @@ export default function JobsPage() {
                 action={<PrimaryButton href="/jobs/new">Create posting</PrimaryButton>}
               />
             ) : (
-              <div className="space-y-3">
+              <div className="space-y-2">
                 {topCandidates.map((candidate, index) => (
-                  <div key={candidate.id} className="grid gap-3 rounded-xl border border-slate-200 px-4 py-3 lg:grid-cols-[56px_1.2fr_1fr_130px_135px] lg:items-center">
-                    <div className="grid h-9 w-9 place-items-center rounded-full bg-slate-100 font-semibold text-slate-700">{index + 1}</div>
+                  <div key={candidate.id} className="grid gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 transition-colors duration-150 hover:border-slate-300 hover:bg-slate-50 lg:grid-cols-[48px_1.2fr_1fr_130px_135px] lg:items-center">
+                    <div className={`grid h-8 w-8 place-items-center rounded-full text-[13px] font-bold ${index === 0 ? "bg-accent text-white" : "bg-slate-100 text-slate-600"}`}>
+                      {index + 1}
+                    </div>
                     <div>
                       <div className="font-semibold text-slate-900">{candidate.display_name}</div>
-                      <div className="text-xs text-slate-500">{candidate.job_posting_title}</div>
+                      <div className="text-[12px] text-slate-500">{candidate.job_posting_title}</div>
                     </div>
-                    <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">{candidate.current_score_type} score</div>
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">{candidate.current_score_type} score</div>
                     <div className="flex lg:justify-center">
                       <ScoreRing score={candidate.current_score_type === "triage" ? (candidate.current_score / 80) * 100 : candidate.current_score} />
                     </div>
@@ -325,7 +339,7 @@ export default function JobsPage() {
                       {candidate.recommendation ? <RecommendationBadge recommendation={candidate.recommendation} /> : null}
                       <Link
                         href={candidate.report_ready ? `/candidates/${candidate.id}/report` : `/candidates/${candidate.id}`}
-                        className="rounded-lg border border-accent px-3 py-1.5 text-xs font-semibold text-accent"
+                        className="rounded-lg border border-accent px-3 py-1.5 text-[12px] font-semibold text-accent transition-colors hover:bg-accent hover:text-white"
                       >
                         {candidate.report_ready ? "View report" : "Open"}
                       </Link>
@@ -337,21 +351,27 @@ export default function JobsPage() {
           </Panel>
 
           <Panel title="Recent Job Postings" subtitle="Latest postings with compact role metadata and applicant volume.">
-            <div className="space-y-3">
+            <div className="space-y-2">
               {recentJobs.map((job) => (
-                <div key={job.id} className="rounded-xl border border-slate-200 p-3">
-                  <div className="font-semibold text-slate-900">{job.title.length > 52 ? `${job.title.slice(0, 52)}...` : job.title}</div>
-                  <div className="mt-1 text-sm text-slate-500">{job.company_priority || "No priority set"}</div>
-                  <div className="mt-1 text-xs text-slate-500">Applicants: {candidatesByPosting[job.id] || 0}</div>
+                <div key={job.id} className="rounded-xl border border-slate-200 bg-white p-3.5 transition-colors duration-150 hover:border-slate-300 hover:bg-slate-50">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="line-clamp-3 font-semibold text-slate-900">{job.title}</div>
+                    <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500">
+                      {candidatesByPosting[job.id] || 0} applicants
+                    </span>
+                  </div>
+                  {job.company_priority ? (
+                    <div className="mt-1 text-[12px] text-slate-500">{job.company_priority}</div>
+                  ) : null}
                   <div className="mt-3">
-                    <Link href={`/jobs/${job.id}`} className="rounded-lg border border-accent px-3 py-1.5 text-xs font-semibold text-accent">
+                    <Link href={`/jobs/${job.id}`} className="rounded-lg border border-accent px-3 py-1.5 text-[12px] font-semibold text-accent transition-colors hover:bg-accent hover:text-white">
                       Open posting
                     </Link>
                   </div>
                 </div>
               ))}
               {recentJobs.length === 0 ? (
-                <div className="text-sm text-slate-500">No postings yet. Create one to begin workflow.</div>
+                <div className="text-[13px] text-slate-500">No postings yet. Create one to begin workflow.</div>
               ) : null}
             </div>
           </Panel>

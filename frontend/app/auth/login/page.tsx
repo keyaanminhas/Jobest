@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
-import { login } from "@/lib/api";
-import { Eye, EyeOff, ArrowRight, CheckCircle2, Sparkles } from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useState, useTransition } from "react";
+import { getChutesAuthUrl, login } from "@/lib/api";
+import { Eye, EyeOff, ArrowRight, CheckCircle2, Sparkles, ShieldCheck } from "lucide-react";
 
 const features = [
   "11-stage multi-agent pipeline from JD to final report",
@@ -15,11 +15,19 @@ const features = [
 
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [pending, startTransition] = useTransition();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    const message = searchParams.get("error");
+    if (message) {
+      setError(message);
+    }
+  }, [searchParams]);
 
   function submit() {
     setError("");
@@ -103,6 +111,20 @@ export default function LoginPage() {
             className="space-y-5"
             onSubmit={(e) => { e.preventDefault(); submit(); }}
           >
+            <a
+              href={getChutesAuthUrl()}
+              className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-5 py-3 text-[14px] font-semibold text-slate-700 transition-colors duration-150 hover:border-slate-300 hover:bg-slate-50"
+            >
+              <ShieldCheck className="h-4 w-4 text-accent" />
+              Sign in with Chutes
+            </a>
+
+            <div className="flex items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+              <span className="h-px flex-1 bg-slate-200" />
+              Or continue with email
+              <span className="h-px flex-1 bg-slate-200" />
+            </div>
+
             <div className="space-y-1.5">
               <label htmlFor="email" className="block text-[13px] font-semibold text-slate-700">
                 Work email

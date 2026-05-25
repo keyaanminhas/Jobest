@@ -1,12 +1,17 @@
+import base64
 import hashlib
 import json
+import os
 import re
+import secrets
 from datetime import datetime
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import urlencode, urlparse
 
+import httpx
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
-from fastapi.responses import FileResponse
+from fastapi import Request
+from fastapi.responses import FileResponse, RedirectResponse
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -59,6 +64,8 @@ UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
 _orchestrator = PipelineOrchestrator()
 _triage_llm_client = LLMClient()
+_OAUTH_STATE_COOKIE = "jobest_chutes_oauth_state"
+_OAUTH_VERIFIER_COOKIE = "jobest_chutes_oauth_verifier"
 _PROGRESS_STAGE_KEYS = [
     "JD Deconstruction Agent",
     "Hiring Context Agent",
@@ -72,6 +79,70 @@ _PROGRESS_STAGE_KEYS = [
     "Interview Pack Generator Agent",
     "Final Shortlist Report Agent",
 ]
+
+
+def _required_env(name: str) -> str:
+    value = os.getenv(name, "").strip()
+    if not value:
+        raise RuntimeError(f"Missing required environment variable: {name}")
+    return value
+
+
+def _frontend_app_url() -> str:
+    return os.getenv("FRONTEND_APP_URL", "http://localhost:3000").strip().rstrip("/")
+
+
+def _chutes_scopes() -> str:
+    return os.getenv("CHUTES_OAUTH_SCOPES", "profile:read").strip() or "profile:read"
+
+
+def _pkce_challenge(verifier: str) -> str:
+    digest = hashlib.sha256(verifier.encode("utf-8")).digest()
+    return base64.urlsafe_b64encode(digest).decode("utf-8").rstrip("=")
+
+
+def _synthetic_chutes_email(subject: str) -> str:
+    return f"chutes_{subject}@oauth.jobest.local"
+
+
+def _auth_error_redirect(message: str) -> RedirectResponse:
+    response = RedirectResponse(
+        url=f"{_frontend_app_url()}/auth/login?{urlencode({'error': message})}",
+        status_code=status.HTTP_302_FOUND,
+    )
+    response.delete_cookie(_OAUTH_STATE_COOKIE, path="/")
+    response.delete_cookie(_OAUTH_VERIFIER_COOKIE, path="/")
+    return response
+
+
+def _auth_success_redirect(token: str) -> RedirectResponse:
+    response = RedirectResponse(
+        url=f"{_frontend_app_url()}/auth/chutes/callback?{urlencode({'token': token})}",
+        status_code=status.HTTP_302_FOUND,
+    )
+    response.delete_cookie(_OAUTH_STATE_COOKIE, path="/")
+    response.delete_cookie(_OAUTH_VERIFIER_COOKIE, path="/")
+    return response
+
+
+async def _load_chutes_profile(client: httpx.AsyncClient, access_token: str, userinfo_url: str) -> dict:
+    headers = {"Authorization": f"Bearer {access_token}"}
+    try:
+        userinfo_response = await client.get(userinfo_url, headers=headers)
+        userinfo_response.raise_for_status()
+        return userinfo_response.json()
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code != status.HTTP_403_FORBIDDEN:
+            raise
+
+    fallback_response = await client.get("https://api.chutes.ai/users/me", headers=headers)
+    fallback_response.raise_for_status()
+    payload = fallback_response.json()
+    return {
+        "sub": payload.get("user_id"),
+        "username": payload.get("username"),
+        "created_at": payload.get("created_at"),
+    }
 
 
 def _job_posting_to_response(posting: JobPosting) -> JobPostingResponse:
@@ -264,6 +335,115 @@ async def startup_analysis_queue() -> None:
 @router.on_event("shutdown")
 async def shutdown_analysis_queue() -> None:
     await analysis_queue_manager.stop()
+
+
+@router.get("/auth/chutes/start")
+async def start_chutes_auth() -> RedirectResponse:
+    try:
+        authorize_url = _required_env("CHUTES_OAUTH_AUTHORIZE_URL")
+        client_id = _required_env("CHUTES_OAUTH_CLIENT_ID")
+        redirect_uri = _required_env("CHUTES_OAUTH_REDIRECT_URI")
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    state = secrets.token_urlsafe(32)
+    verifier = secrets.token_urlsafe(64)
+    params = {
+        "response_type": "code",
+        "client_id": client_id,
+        "redirect_uri": redirect_uri,
+        "scope": _chutes_scopes(),
+        "state": state,
+        "code_challenge": _pkce_challenge(verifier),
+        "code_challenge_method": "S256",
+    }
+    response = RedirectResponse(
+        url=f"{authorize_url}?{urlencode(params)}",
+        status_code=status.HTTP_302_FOUND,
+    )
+    response.set_cookie(_OAUTH_STATE_COOKIE, state, httponly=True, max_age=600, samesite="lax", path="/")
+    response.set_cookie(_OAUTH_VERIFIER_COOKIE, verifier, httponly=True, max_age=600, samesite="lax", path="/")
+    return response
+
+
+@router.get("/auth/chutes/callback")
+async def complete_chutes_auth(
+    request: Request,
+    db: AsyncSession = Depends(get_db_session),
+) -> RedirectResponse:
+    error = request.query_params.get("error")
+    error_description = request.query_params.get("error_description")
+    if error:
+        return _auth_error_redirect(error_description or error)
+
+    code = request.query_params.get("code")
+    returned_state = request.query_params.get("state")
+    expected_state = request.cookies.get(_OAUTH_STATE_COOKIE)
+    verifier = request.cookies.get(_OAUTH_VERIFIER_COOKIE)
+
+    if not code:
+        return _auth_error_redirect("Missing authorization code.")
+    if not returned_state or not expected_state or returned_state != expected_state:
+        return _auth_error_redirect("OAuth state validation failed.")
+    if not verifier:
+        return _auth_error_redirect("Missing PKCE verifier.")
+
+    try:
+        token_url = _required_env("CHUTES_OAUTH_TOKEN_URL")
+        userinfo_url = _required_env("CHUTES_OAUTH_USERINFO_URL")
+        client_id = _required_env("CHUTES_OAUTH_CLIENT_ID")
+        client_secret = _required_env("CHUTES_OAUTH_CLIENT_SECRET")
+        redirect_uri = _required_env("CHUTES_OAUTH_REDIRECT_URI")
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            token_response = await client.post(
+                token_url,
+                data={
+                    "grant_type": "authorization_code",
+                    "code": code,
+                    "redirect_uri": redirect_uri,
+                    "client_id": client_id,
+                    "client_secret": client_secret,
+                    "code_verifier": verifier,
+                },
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+            )
+            token_response.raise_for_status()
+            token_payload = token_response.json()
+            access_token = token_payload.get("access_token")
+            if not isinstance(access_token, str) or not access_token:
+                return _auth_error_redirect("Chutes token response was missing an access token.")
+
+            userinfo = await _load_chutes_profile(client, access_token, userinfo_url)
+    except httpx.HTTPError as exc:
+        return _auth_error_redirect(f"Chutes OAuth exchange failed: {exc}")
+
+    subject = userinfo.get("sub")
+    username = userinfo.get("username")
+    if not isinstance(subject, str) or not subject:
+        return _auth_error_redirect("Chutes user info did not include a stable subject.")
+
+    synthetic_email = _synthetic_chutes_email(subject)
+    user = await db.scalar(select(User).where(User.email == synthetic_email))
+    if user is None:
+        user = User(
+            email=synthetic_email,
+            password_hash=hash_password(secrets.token_urlsafe(32)),
+            full_name=username if isinstance(username, str) and username else "Chutes User",
+        )
+        db.add(user)
+        await db.flush()
+    elif isinstance(username, str) and username and user.full_name != username:
+        user.full_name = username
+
+    user.last_login_at = datetime.utcnow()
+    await db.commit()
+
+    token = create_access_token(user.id)
+    return _auth_success_redirect(token)
 
 
 @router.post("/auth/signup", response_model=AuthResponse)

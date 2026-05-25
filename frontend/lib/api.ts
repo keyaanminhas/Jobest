@@ -21,7 +21,7 @@ import {
   SingleCvRunResponse,
 } from "@/lib/types";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000";
 const API_KEY = process.env.NEXT_PUBLIC_API_KEY ?? "change-this-demo-key";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -105,6 +105,10 @@ export async function login(email: string, password: string) {
   const data = (await response.json()) as AuthResponse;
   setAuthToken(data.access_token);
   return data;
+}
+
+export function getChutesAuthUrl() {
+  return `${API_BASE_URL}/api/auth/chutes/start`;
 }
 
 export function logout() {

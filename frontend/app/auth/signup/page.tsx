@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import { signup } from "@/lib/api";
-import { Eye, EyeOff, ArrowRight, CheckCircle2, Sparkles } from "lucide-react";
+import { getChutesAuthUrl, signup } from "@/lib/api";
+import { Eye, EyeOff, ArrowRight, CheckCircle2, ShieldCheck, Sparkles } from "lucide-react";
 
 const perks = [
   "Role-based CV triage and final ranking on one score scale",
@@ -114,6 +114,20 @@ export default function SignupPage() {
             className="space-y-4"
             onSubmit={(e) => { e.preventDefault(); submit(); }}
           >
+            <a
+              href={getChutesAuthUrl()}
+              className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-5 py-3 text-[14px] font-semibold text-slate-700 transition-colors duration-150 hover:border-slate-300 hover:bg-slate-50"
+            >
+              <ShieldCheck className="h-4 w-4 text-accent" />
+              Continue with Chutes
+            </a>
+
+            <div className="flex items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+              <span className="h-px flex-1 bg-slate-200" />
+              Or create a local account
+              <span className="h-px flex-1 bg-slate-200" />
+            </div>
+
             <div className="space-y-1.5">
               <label htmlFor="fullName" className="block text-[13px] font-semibold text-slate-700">
                 Full name
