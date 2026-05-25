@@ -1,0 +1,6 @@
+{
+  "summary": "Top candidates show strong evidence for backend/API execution and partial deployment readiness.",
+  "top_candidates": [],
+  "risks_to_verify": ["Deployment depth", "SQL schema quality"],
+  "suggested_next_action": "Run structured technical interviews for top 3 candidates."
+}

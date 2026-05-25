@@ -1,0 +1,9 @@
+{
+  "portfolio_score": 70,
+  "github_score": 78,
+  "claim_support": "moderate",
+  "professional_evidence": ["GitHub shows API code", "Portfolio includes deployment notes"],
+  "concerns": ["Limited automated tests"],
+  "supported_resume_claims": ["Python", "API development"],
+  "unsupported_resume_claims": ["Docker"]
+}

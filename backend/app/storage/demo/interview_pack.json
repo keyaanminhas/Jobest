@@ -1,0 +1,20 @@
+{
+  "technical_questions": [
+    {
+      "question": "Walk through an API you built and deployed.",
+      "what_to_listen_for": "Routing, data model, deployment, monitoring"
+    }
+  ],
+  "behavioral_questions": [
+    {
+      "question": "Tell us about learning a new backend tool quickly.",
+      "what_to_listen_for": "Ownership and execution"
+    }
+  ],
+  "risk_validation_questions": [
+    {
+      "question": "Explain your Docker workflow in one project.",
+      "what_to_listen_for": "Practical build/run/debug details"
+    }
+  ]
+}

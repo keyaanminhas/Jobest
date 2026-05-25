@@ -1,0 +1,24 @@
+{
+  "exact_matches": [
+    {
+      "requirement": "Python",
+      "candidate_skill": "Python",
+      "evidence": "Python service development",
+      "confidence": "high"
+    }
+  ],
+  "transferable_matches": [
+    {
+      "requirement": "FastAPI",
+      "candidate_skill": "Flask API",
+      "reasoning": "Transferable REST API experience",
+      "confidence": "medium"
+    }
+  ],
+  "missing_requirements": [
+    {
+      "requirement": "Docker",
+      "reason": "No concrete deployment evidence"
+    }
+  ]
+}

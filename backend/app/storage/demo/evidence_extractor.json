@@ -1,0 +1,22 @@
+{
+  "evidence_items": [
+    {
+      "skill": "Python",
+      "evidence": "Built backend feature extraction service.",
+      "source": "resume",
+      "confidence": "high"
+    },
+    {
+      "skill": "SQL",
+      "evidence": "Designed PostgreSQL schema for analytics.",
+      "source": "resume",
+      "confidence": "medium"
+    }
+  ],
+  "unsupported_claims": [
+    {
+      "claim": "Docker",
+      "reason": "Listed but no concrete project evidence"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "role_title": "Junior AI Backend Engineer",
+  "seniority": "junior",
+  "must_have_skills": ["Python", "FastAPI", "SQL", "Git"],
+  "nice_to_have_skills": ["Docker", "AWS"],
+  "responsibilities": ["Build APIs", "Connect AI models", "Manage data storage"],
+  "domain_requirements": ["AI product development", "Backend engineering"],
+  "red_flags": ["Keyword stuffing", "No evidence"],
+  "recommended_weights": {
+    "requirement_match": 35,
+    "evidence_strength": 25,
+    "professional_footprint": 20,
+    "hiring_context_fit": 15,
+    "risk_penalty": 5
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "risk_level": "medium",
+  "risk_penalty": 6,
+  "risks": ["Docker claim weak", "Cloud depth unclear"],
+  "recommended_interview_focus": ["Deployment pipeline", "Schema design"]
+}

@@ -1,0 +1,7 @@
+{
+  "team_gaps": ["Backend deployment", "API design", "SQL integration"],
+  "company_priorities": ["Production-ready AI", "Reliable APIs"],
+  "ideal_candidate_traits": ["Hands-on backend shipping"],
+  "context_fit_keywords": ["fastapi", "sql", "deployment", "docker"],
+  "context_risks": ["Research-heavy profile may underfit"]
+}
