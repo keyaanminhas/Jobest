@@ -32,7 +32,7 @@ async def require_api_key(x_api_key: str | None = Header(default=None, alias="X-
         raise HTTPException(status_code=401, detail="Invalid API key")
 
 
-orchestrator = PipelineOrchestrator()
+
 
 
 def _run_path(run_id: str) -> Path:
@@ -105,7 +105,8 @@ async def run_pipeline(run_id: str, background_tasks: BackgroundTasks) -> RunExe
                 }
                 _save_run(run)
 
-            results = await orchestrator.run_pipeline(run, on_progress=save_progress_callback)
+            local_orchestrator = PipelineOrchestrator()
+            results = await local_orchestrator.run_pipeline(run, on_progress=save_progress_callback)
             run["results"] = results
             run["status"] = "completed"
             _save_run(run)
