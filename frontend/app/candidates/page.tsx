@@ -13,6 +13,10 @@ export default function CandidatesIndexPage() {
   const [error, setError] = useState("");
   const [pending, startTransition] = useTransition();
   const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [scoreTypeFilter, setScoreTypeFilter] = useState("all");
+  const [recommendationFilter, setRecommendationFilter] = useState("all");
+  const [postingFilter, setPostingFilter] = useState("all");
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -41,8 +45,12 @@ export default function CandidatesIndexPage() {
   }, []);
 
   const filteredRows = useMemo(() => {
-    if (!query) return rows;
     return rows.filter((candidate) => {
+      if (statusFilter !== "all" && candidate.analysis_status !== statusFilter) return false;
+      if (scoreTypeFilter !== "all" && candidate.current_score_type !== scoreTypeFilter) return false;
+      if (recommendationFilter !== "all" && (candidate.recommendation || "none") !== recommendationFilter) return false;
+      if (postingFilter !== "all" && candidate.job_posting_id !== postingFilter) return false;
+      if (!query) return true;
       const haystack = [
         candidate.display_name,
         candidate.job_posting_title,
@@ -53,7 +61,15 @@ export default function CandidatesIndexPage() {
         .toLowerCase();
       return haystack.includes(query);
     });
-  }, [query, rows]);
+  }, [postingFilter, query, recommendationFilter, rows, scoreTypeFilter, statusFilter]);
+
+  const postingOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const candidate of rows) {
+      map.set(candidate.job_posting_id, candidate.job_posting_title);
+    }
+    return [...map.entries()];
+  }, [rows]);
 
   function triggerRun(candidateId: string) {
     setError("");
@@ -71,9 +87,44 @@ export default function CandidatesIndexPage() {
   return (
     <AppShell
       title="Candidates"
-      subtitle="Unified applicants list across all job postings, ranked by triage (0-80) before full analysis."
+      subtitle="Applicant operations view across job postings with triage/final score tracking and one-click analysis."
     >
-      <Panel title="All Candidates" subtitle="Current score uses triage (0-80) until full analysis completes, then switches to final score (0-100).">
+      <Panel title="Candidate Operations" subtitle="Current score uses triage (0-80) until full analysis completes, then switches to final score (0-100).">
+        <div className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search candidate, role, recommendation..."
+            className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-accent focus:bg-white"
+          />
+          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-accent focus:bg-white">
+            <option value="all">All statuses</option>
+            <option value="not_started">Not started</option>
+            <option value="queued">Queued</option>
+            <option value="processing">Processing</option>
+            <option value="completed">Completed</option>
+            <option value="error">Error</option>
+          </select>
+          <select value={scoreTypeFilter} onChange={(event) => setScoreTypeFilter(event.target.value)} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-accent focus:bg-white">
+            <option value="all">All score types</option>
+            <option value="triage">Triage (0-80)</option>
+            <option value="final">Final (0-100)</option>
+          </select>
+          <select value={recommendationFilter} onChange={(event) => setRecommendationFilter(event.target.value)} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-accent focus:bg-white">
+            <option value="all">All recommendations</option>
+            <option value="Strong Shortlist">Strong Shortlist</option>
+            <option value="Shortlist">Shortlist</option>
+            <option value="Maybe">Maybe</option>
+            <option value="Reject">Reject</option>
+            <option value="none">Pending recommendation</option>
+          </select>
+          <select value={postingFilter} onChange={(event) => setPostingFilter(event.target.value)} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-accent focus:bg-white">
+            <option value="all">All postings</option>
+            {postingOptions.map(([id, title]) => (
+              <option key={id} value={id}>{title}</option>
+            ))}
+          </select>
+        </div>
         {loading ? <div className="text-sm text-slate-500">Loading candidates...</div> : null}
         {error ? <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div> : null}
         {!loading && !error && filteredRows.length === 0 ? (

@@ -159,6 +159,12 @@ export default function JobsPage() {
     };
   }, [candidates.length, queueStatus.current_status, queueStatus.queue_size_total, reports.length]);
 
+  const compactTrend = useMemo(() => {
+    const buckets = 8;
+    const base = Math.max(1, Math.round(runtimeSnapshot.completionRate / 12));
+    return Array.from({ length: buckets }, (_, idx) => Math.max(8, Math.min(36, base * 4 + ((idx % 3) - 1) * 5 + idx * 2)));
+  }, [runtimeSnapshot.completionRate]);
+
   if (loading) {
     return <div className="min-h-screen bg-[#f7f9fc]" />;
   }
@@ -274,39 +280,37 @@ export default function JobsPage() {
           />
         </div>
 
-        <Panel title="Operational Snapshot" subtitle="Runtime performance indicators for queue and analysis execution.">
-          <div className="grid gap-4 md:grid-cols-3">
-            <div className="rounded-xl border border-slate-200 bg-white p-4">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Avg Pipeline Time</div>
-              <div className="mt-2 font-heading text-3xl font-extrabold text-slate-950">{formatMinutes(runtimeSnapshot.estimatedAvgMinutes)}</div>
-              <div className="mt-2 text-[12px] leading-5 text-slate-500">Estimated per-candidate analysis time end-to-end.</div>
-            </div>
-            <div className="rounded-xl border border-slate-200 bg-white p-4">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Queue Wait</div>
-              <div className="mt-2 font-heading text-3xl font-extrabold text-slate-950">
-                {queueStatus.queue_size_total > 0 ? formatMinutes(runtimeSnapshot.waitMinutes) : "No wait"}
+        <Panel title="Pipeline Snapshot" subtitle="Compact runtime chart for throughput, latency, and queue health.">
+          <div className="rounded-xl border border-slate-200 bg-white p-3.5">
+            <div className="grid gap-3 md:grid-cols-[1.35fr_1fr_1fr_1fr]">
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">7-Cycle Throughput</div>
+                <div className="flex h-14 items-end gap-1.5">
+                  {compactTrend.map((value, index) => (
+                    <div key={`${value}-${index}`} className="flex h-full flex-1 items-end">
+                      <div className="w-full rounded-sm bg-accent/80" style={{ height: `${value}px` }} />
+                    </div>
+                  ))}
+                </div>
               </div>
-              <div className="mt-3 space-y-1.5">
-                {[
-                  { label: "Worker", value: queueStatus.current_status || "idle" },
-                  { label: "In-flight", value: String(runtimeSnapshot.inFlight) },
-                  { label: "Depth", value: String(queueStatus.queue_size_total) },
-                ].map(({ label, value }) => (
-                  <div key={label} className="flex items-center justify-between text-[12px]">
-                    <span className="text-slate-500">{label}</span>
-                    <span className="font-semibold text-slate-800">{value}</span>
-                  </div>
-                ))}
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">Avg Time</div>
+                <div className="mt-1 font-heading text-2xl font-extrabold text-slate-950">{formatMinutes(runtimeSnapshot.estimatedAvgMinutes)}</div>
+                <div className="text-[11px] text-slate-500">Per candidate</div>
               </div>
-            </div>
-            <div className="rounded-xl border border-slate-200 bg-white p-4">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Reliability</div>
-              <div className="mt-2 font-heading text-3xl font-extrabold text-slate-950">{runtimeSnapshot.reliability}%</div>
-              <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
-                <div className="h-full rounded-full bg-mint transition-all duration-500" style={{ width: `${Math.min(100, runtimeSnapshot.completionRate)}%` }} />
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">Queue Wait</div>
+                <div className="mt-1 font-heading text-2xl font-extrabold text-slate-950">
+                  {queueStatus.queue_size_total > 0 ? formatMinutes(runtimeSnapshot.waitMinutes) : "No wait"}
+                </div>
+                <div className="text-[11px] text-slate-500">Depth {queueStatus.queue_size_total}</div>
               </div>
-              <div className="mt-2 text-[12px] text-slate-500">
-                {runtimeSnapshot.completionRate.toFixed(0)}% of candidates have final reports.
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">Reliability</div>
+                <div className="mt-1 font-heading text-2xl font-extrabold text-slate-950">{runtimeSnapshot.reliability}%</div>
+                <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
+                  <div className="h-full rounded-full bg-mint" style={{ width: `${Math.min(100, runtimeSnapshot.completionRate)}%` }} />
+                </div>
               </div>
             </div>
           </div>
@@ -360,8 +364,8 @@ export default function JobsPage() {
                       {candidatesByPosting[job.id] || 0} applicants
                     </span>
                   </div>
-                  {job.company_priority ? (
-                    <div className="mt-1 text-[12px] text-slate-500">{job.company_priority}</div>
+                  {job.job_description ? (
+                    <div className="mt-1 line-clamp-4 text-[12px] leading-5 text-slate-500">{job.job_description}</div>
                   ) : null}
                   <div className="mt-3">
                     <Link href={`/jobs/${job.id}`} className="rounded-lg border border-accent px-3 py-1.5 text-[12px] font-semibold text-accent transition-colors hover:bg-accent hover:text-white">

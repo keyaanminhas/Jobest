@@ -21,6 +21,7 @@ import { cn } from "@/lib/utils";
 
 const navItems = [
   { href: "/jobs", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/jobs/current", label: "Current Postings", icon: BriefcaseBusiness },
   { href: "/jobs/new", label: "New Posting", icon: BriefcaseBusiness },
   { href: "/candidates", label: "Candidates", icon: Users },
   { href: "/reports", label: "Reports", icon: ChartColumnBig },
@@ -143,7 +144,7 @@ export function AppShell({
   return (
     <div className="min-h-screen bg-[#f7f9fc]">
       <div className="mx-auto flex max-w-[1720px]">
-        <aside className="hidden min-h-screen w-[240px] shrink-0 border-r border-slate-200 bg-white px-4 py-6 md:flex md:flex-col">
+        <aside className="hidden min-h-screen w-[250px] shrink-0 border-r border-slate-200 bg-white px-4 py-6 md:flex md:flex-col">
           <div className="px-3">
             <div className="font-heading text-[2.9rem] font-extrabold leading-none tracking-tight text-accent">Jobest</div>
             <p className="mt-2 text-[13px] leading-6 text-slate-600">
@@ -171,17 +172,21 @@ export function AppShell({
             })}
           </nav>
 
-          <div className="mt-auto rounded-2xl border border-slate-200 bg-[#fbfcfe] p-4">
-            <div className="text-xs uppercase tracking-[0.2em] text-slate-500">Plan</div>
+          <div className="mt-auto rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 via-white to-blue-50 p-4">
+            <div className="text-xs uppercase tracking-[0.2em] text-slate-500">Workspace Health</div>
             <div className="mt-2 flex items-center justify-between">
               <div>
-                <div className="font-semibold text-slate-900">Enterprise</div>
-                <div className="text-xs text-slate-500">Seat usage 24 / 50</div>
+                <div className="font-semibold text-slate-900">Enterprise Suite</div>
+                <div className="text-xs text-slate-500">Seat usage 24 / 50 active</div>
               </div>
-              <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">Active</span>
+              <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">Healthy</span>
             </div>
             <div className="mt-4 h-2 rounded-full bg-slate-200">
-              <div className="h-2 w-1/2 rounded-full bg-accent" />
+              <div className="h-2 w-[62%] rounded-full bg-accent" />
+            </div>
+            <div className="mt-2 flex items-center justify-between text-[11px] text-slate-500">
+              <span>Pipeline SLA</span>
+              <span className="font-semibold text-slate-700">96.4%</span>
             </div>
           </div>
 
@@ -196,10 +201,10 @@ export function AppShell({
 
         <main className="min-w-0 flex-1">
           <div className="border-b border-slate-200 bg-white px-6 py-4 print:hidden">
-            <div className="flex items-center justify-between gap-4">
+            <div className="grid grid-cols-[auto_1fr_auto] items-center gap-4">
 
               {/* Left: dashboard home + search */}
-              <div className="flex min-w-0 flex-1 items-center gap-3">
+              <div className="flex min-w-0 items-center gap-3">
                 <Link
                   href="/jobs"
                   className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 text-slate-500 transition-colors duration-150 hover:bg-slate-50 hover:text-ink"
@@ -207,7 +212,10 @@ export function AppShell({
                 >
                   <LayoutDashboard className="h-4 w-4" />
                 </Link>
-                <div className="flex h-10 w-full max-w-[680px] items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 shadow-sm transition-all duration-150 focus-within:border-accent focus-within:bg-white focus-within:ring-2 focus-within:ring-accent/10">
+              </div>
+
+              <div className="flex justify-center">
+                <div className="flex h-10 w-full max-w-[720px] items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 shadow-sm transition-all duration-150 focus-within:border-accent focus-within:bg-white focus-within:ring-2 focus-within:ring-accent/10">
                   <Search className="h-4 w-4 shrink-0 text-slate-400" />
                   <input
                     ref={searchInputRef}

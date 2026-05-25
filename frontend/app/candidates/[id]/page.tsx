@@ -170,9 +170,6 @@ export default function CandidatePage() {
                 <StatusBadge status={stage.status} />
               </div>
               <p className="mt-1 text-xs text-slate-600">{stage.summary}</p>
-              <div className="mt-2">
-                <JsonAccordion label="Raw output" value={stage.raw_output} />
-              </div>
             </div>
           ))}
           {stages.length === 0 ? (
@@ -219,6 +216,15 @@ export default function CandidatePage() {
           </div>
         </Panel>
       </div>
+
+      <Panel title="Raw Stage Summaries" subtitle="Expandable technical trace of raw structured stage outputs.">
+        <div className="space-y-2">
+          {stages.map((stage, index) => (
+            <JsonAccordion key={`raw-${stage.stage}-${index}`} label={`${stage.stage} (${stage.status})`} value={stage.raw_output} />
+          ))}
+          {stages.length === 0 ? <div className="text-sm text-slate-500">No raw stage outputs available yet.</div> : null}
+        </div>
+      </Panel>
     </AppShell>
   );
 }
