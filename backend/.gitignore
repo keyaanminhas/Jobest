@@ -5,3 +5,5 @@ __pycache__/
 *.pyc
 app/storage/cache/*.json
 app/storage/demo/runs/*.json
+app/storage/demo/*.db
+app/storage/uploads/

@@ -24,12 +24,19 @@ export function RunLoader({
 
   useEffect(() => {
     let cancelled = false;
+    let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
 
-    async function load() {
+    async function load(poll = false) {
       try {
         const result = await resolveRun(runId);
         if (!cancelled) {
           setState({ loading: false, run: result.run, offline: result.offline });
+          const status = result.run.results?.status ?? result.run.status;
+          if (poll && (status === "processing" || status === "draft")) {
+            timeoutHandle = setTimeout(() => {
+              void load(true);
+            }, 2000);
+          }
         }
       } catch (error) {
         if (!cancelled) {
@@ -41,9 +48,12 @@ export function RunLoader({
       }
     }
 
-    load();
+    void load(true);
     return () => {
       cancelled = true;
+      if (timeoutHandle) {
+        clearTimeout(timeoutHandle);
+      }
     };
   }, [runId]);
 

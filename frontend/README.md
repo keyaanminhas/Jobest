@@ -13,15 +13,25 @@ npm run dev
 ## Environment
 ```bash
 NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
-NEXT_PUBLIC_API_KEY=change-this-demo-key
 ```
 
 ## Pages
 - `/`
-- `/runs/new`
-- `/runs/[id]/pipeline`
-- `/runs/[id]/shortlist`
-- `/runs/[id]/candidates/[candidateId]`
-- `/runs/[id]/report`
+- `/auth/login`
+- `/auth/signup`
+- `/jobs`
+- `/jobs/new`
+- `/jobs/[id]`
+- `/candidates`
+- `/candidates/[id]`
+- `/candidates/[id]/report`
+- `/reports`
 
-If the backend is unavailable, the UI can still run using the built-in polished demo scenario.
+## Dashboard Polish Plan
+1. Increase information density with compact metrics for posting load, applicant volume, and report completion.
+2. Keep the top shortlist and recent postings side-by-side for faster recruiter decisions.
+3. Preserve a clear two-phase scoring story: triage is normalized to `0-80`, full analysis remains `0-100`.
+4. Keep recent posting cards concise (title, priority, applicant count) and avoid long job-description dumps.
+5. Maintain a functional top search bar that routes to filtered candidate results and supports `Ctrl+K` focus.
+
+Legacy `/runs/*` pages are kept for backwards compatibility while the org workflow is now the primary path.

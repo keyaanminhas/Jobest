@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: jobest-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: jobest
+      POSTGRES_USER: jobest
+      POSTGRES_PASSWORD: jobest
+    ports:
+      - "5432:5432"
+    volumes:
+      - jobest_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U jobest -d jobest"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  jobest_pg_data:

@@ -37,6 +37,12 @@ class HiringRunResponse(BaseModel):
     run: HiringRun
 
 
+class SingleCVRunResponse(BaseModel):
+    run_id: str
+    status: str
+    run: HiringRun
+
+
 class PipelineStage(BaseModel):
     stage: str
     status: str

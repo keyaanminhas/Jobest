@@ -1,9 +1,11 @@
 import json
 import os
+import re
 from pathlib import Path
+from urllib.parse import urlparse
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Header, HTTPException, UploadFile
 
 from app.schemas.hiring import (
     CreateHiringRunRequest,
@@ -11,9 +13,17 @@ from app.schemas.hiring import (
     HiringRun,
     HiringRunResponse,
     RunExecutionResponse,
+    SingleCVRunResponse,
     ShortlistResponse,
 )
 from app.services.orchestrator import PipelineOrchestrator
+from app.services.resume_ingestion import (
+    ResumeIngestionError,
+    assert_pdf_upload,
+    derive_candidate_name,
+    extract_pdf_text,
+)
+from app.services.seeded_role import FIRST_RUN_PRESET
 
 router = APIRouter(prefix="/api", tags=["jobest"])
 
@@ -48,6 +58,100 @@ def _load_run(run_id: str) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def _extract_professional_links(raw_urls: str | None) -> dict[str, str]:
+    if not raw_urls:
+        return {}
+
+    tokens = [token.strip() for token in re.split(r"[\n,; ]+", raw_urls) if token.strip()]
+    links: dict[str, str] = {}
+    for token in tokens:
+        if token.lower().startswith(("http://", "https://")):
+            parsed = urlparse(token)
+            host = parsed.netloc.lower()
+            if "github.com" in host and "github" not in links:
+                links["github"] = token
+            elif any(domain in host for domain in ("linkedin.com", "lnkd.in")) and "linkedin" not in links:
+                links["linkedin"] = token
+            elif "kaggle.com" in host and "kaggle" not in links:
+                links["kaggle"] = token
+            elif "scholar.google." in host and "scholar" not in links:
+                links["scholar"] = token
+            elif "portfolio" not in links:
+                links["portfolio"] = token
+    return links
+
+
+def _run_execution_from_results(run_id: str, results: dict, status: str) -> RunExecutionResponse:
+    return RunExecutionResponse(
+        run_id=run_id,
+        status=status,
+        pipeline=results.get("pipeline", []),
+        top_candidates=results.get("top_candidates", []),
+        report=results.get("report", ""),
+    )
+
+
+async def _execute_and_persist_run(run: dict, *, persist_progress: bool = False) -> tuple[dict, RunExecutionResponse]:
+    run["status"] = "processing"
+    run["results"] = {
+        "run_id": run["id"],
+        "status": "processing",
+        "pipeline": [],
+        "top_candidates": [],
+        "report": "",
+        "report_data": {},
+        "candidates": [],
+    }
+    _save_run(run)
+
+    try:
+        async def _progress_callback(pipeline: list[dict], candidates: list[dict]) -> None:
+            if not persist_progress:
+                return
+            latest = _load_run(run["id"])
+            latest["results"] = {
+                "run_id": run["id"],
+                "status": "processing",
+                "pipeline": pipeline,
+                "top_candidates": [],
+                "report": "",
+                "report_data": {},
+                "candidates": candidates,
+            }
+            latest["status"] = "processing"
+            _save_run(latest)
+
+        results = await orchestrator.run_pipeline(run, progress_callback=_progress_callback if persist_progress else None)
+        run["results"] = results
+        run["status"] = "completed"
+        _save_run(run)
+        return run, _run_execution_from_results(run["id"], results, "completed")
+    except Exception as exc:
+        run["status"] = "error"
+        run["results"] = {
+            "run_id": run["id"],
+            "status": "error",
+            "pipeline": [
+                {
+                    "stage": "Pipeline",
+                    "status": "error",
+                    "summary": "Pipeline failed before completion",
+                    "raw_output": {"error": str(exc)},
+                }
+            ],
+            "top_candidates": [],
+            "report": "Pipeline failed",
+            "error": str(exc),
+        }
+        _save_run(run)
+        return run, _run_execution_from_results(run["id"], run["results"], "error")
+
+
+async def _execute_run_background(run_id: str) -> None:
+    run = _load_run(run_id)
+    await _execute_and_persist_run(run, persist_progress=True)
+
+
 @router.post("/hiring-runs", response_model=HiringRunResponse, dependencies=[Depends(require_api_key)])
 async def create_hiring_run(payload: CreateHiringRunRequest) -> HiringRunResponse:
     run = HiringRun(
@@ -66,49 +170,76 @@ async def create_hiring_run(payload: CreateHiringRunRequest) -> HiringRunRespons
     return HiringRunResponse(run_id=run["id"], status=run["status"], run=HiringRun.model_validate(run))
 
 
+@router.get("/hiring-runs/{run_id}", response_model=HiringRun, dependencies=[Depends(require_api_key)])
+async def get_hiring_run(run_id: str) -> HiringRun:
+    run = _load_run(run_id)
+    return HiringRun.model_validate(run)
+
+
 @router.post("/hiring-runs/{run_id}/run", response_model=RunExecutionResponse, dependencies=[Depends(require_api_key)])
 async def run_pipeline(run_id: str) -> RunExecutionResponse:
     run = _load_run(run_id)
-    run["status"] = "processing"
-    _save_run(run)
+    _, execution = await _execute_and_persist_run(run)
+    return execution
 
+
+@router.post("/single-cv-runs", response_model=SingleCVRunResponse, dependencies=[Depends(require_api_key)])
+async def run_single_cv(
+    background_tasks: BackgroundTasks,
+    cv_pdf: UploadFile = File(...),
+    candidate_name_override: str | None = Form(default=None),
+    additional_urls: str | None = Form(default=None),
+) -> SingleCVRunResponse:
     try:
-        results = await orchestrator.run_pipeline(run)
-        run["results"] = results
-        run["status"] = "completed"
-        _save_run(run)
-        return RunExecutionResponse(
-            run_id=run_id,
-            status="completed",
-            pipeline=results.get("pipeline", []),
-            top_candidates=results.get("top_candidates", []),
-            report=results.get("report", ""),
-        )
-    except Exception as exc:
-        run["status"] = "error"
-        run["results"] = {
-            "run_id": run_id,
-            "status": "error",
-            "pipeline": [
-                {
-                    "stage": "Pipeline",
-                    "status": "error",
-                    "summary": "Pipeline failed before completion",
-                    "raw_output": {"error": str(exc)},
-                }
-            ],
+        assert_pdf_upload(cv_pdf.filename)
+        file_bytes = await cv_pdf.read()
+        resume_text = extract_pdf_text(file_bytes)
+    except ResumeIngestionError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    candidate_name = derive_candidate_name(
+        resume_text=resume_text,
+        filename=cv_pdf.filename,
+        name_override=candidate_name_override,
+    )
+    professional_links = _extract_professional_links(additional_urls)
+
+    preset = FIRST_RUN_PRESET
+    run = HiringRun(
+        id=str(uuid4()),
+        title=preset.title,
+        job_description=preset.job_description,
+        hiring_context=preset.hiring_context,
+        company_priority=preset.company_priority,
+        must_have_skills=preset.must_have_skills,
+        nice_to_have_skills=preset.nice_to_have_skills,
+        candidates=[
+            {
+                "name": candidate_name,
+                "resume_text": resume_text,
+                "professional_links": professional_links,
+                "notes": "additional_urls_provided=true" if professional_links else None,
+            }
+        ],
+        status="processing",
+        results={
+            "run_id": "",
+            "status": "processing",
+            "pipeline": [],
             "top_candidates": [],
-            "report": "Pipeline failed",
-            "error": str(exc),
-        }
-        _save_run(run)
-        return RunExecutionResponse(
-            run_id=run_id,
-            status="error",
-            pipeline=run["results"]["pipeline"],
-            top_candidates=[],
-            report="Pipeline failed",
-        )
+            "report": "",
+            "report_data": {},
+            "candidates": [],
+        },
+    ).model_dump(mode="json")
+    run["results"]["run_id"] = run["id"]
+    _save_run(run)
+    background_tasks.add_task(_execute_run_background, run["id"])
+    return SingleCVRunResponse(
+        run_id=run["id"],
+        status="processing",
+        run=HiringRun.model_validate(run),
+    )
 
 
 @router.get("/hiring-runs/{run_id}/shortlist", response_model=ShortlistResponse, dependencies=[Depends(require_api_key)])

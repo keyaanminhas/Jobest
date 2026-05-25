@@ -19,6 +19,9 @@ Create `backend/.env` (or copy from `backend/.env.example`) and set:
 
 - `APP_ENV=dev`
 - `API_KEY=change-this-demo-key`
+- `JWT_SECRET_KEY=change-this-jwt-secret`
+- `DATABASE_URL=sqlite+aiosqlite:///./app/storage/jobest.db` (default)
+- `AUTO_CREATE_DB_SCHEMA=true`
 - `LLM_MODE=mock|cached|live`
 - `LLM_PROVIDER=nvidia` (or your provider)
 - `LLM_BASE_URL=https://integrate.api.nvidia.com/v1` (or provider base URL)
@@ -69,8 +72,29 @@ npm run dev
 
 Open: `http://localhost:3000`
 
+## Org MVP Flow
+
+- Open `http://localhost:3000`
+- Sign up / login
+- Create a job posting
+- Upload CV PDFs on posting page (triage ranking happens on upload)
+- Open candidate page and click **Run Full Analysis**
+- Poll live stage progress and open candidate report
+
+## Live Provider Mode
+
+Use any OpenAI-compatible provider directly from backend `.env`:
+- `LLM_MODE=live`
+- `LLM_PROVIDER=nvidia` (or `openrouter` / `chutes`)
+- `LLM_BASE_URL=<provider_base_url>/v1`
+- `LLM_API_KEY=<provider_key>`
+- `LLM_MODEL=<provider_model_id>`
+
+Jobest orchestrates its own sub-agents entirely in backend code.
+
 ## Notes
 
 - Keep secrets only in local `.env` files.
 - `.env` files are gitignored and should not be committed.
 - Use `mock` mode first for demos without live provider calls.
+- Postgres is optional; if you want it, override `DATABASE_URL` with your Postgres DSN.

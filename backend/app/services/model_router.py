@@ -18,24 +18,94 @@ class ModelRouter:
     primary: ProviderConfig
     fallback: ProviderConfig | None
 
+    @staticmethod
+    def _is_placeholder(value: str) -> bool:
+        normalized = value.strip().lower()
+        return normalized in {
+            "",
+            "your_key_here",
+            "change-this-demo-key",
+            "changeme",
+            "replace-me",
+            "replace_this",
+        }
+
+    @staticmethod
+    def _first_nonempty(*values: str) -> str:
+        for value in values:
+            if value and value.strip() and not ModelRouter._is_placeholder(value):
+                return value.strip()
+        return ""
+
     @classmethod
     def from_env(cls) -> "ModelRouter":
         mode = os.getenv("LLM_MODE", "mock").strip().lower()
         if os.getenv("USE_MOCK_LLM", "false").strip().lower() == "true":
             mode = "mock"
 
+        primary_provider = os.getenv("LLM_PROVIDER", "nvidia").strip().lower()
+        fallback_provider = os.getenv("FALLBACK_PROVIDER", "openrouter").strip().lower()
+
+        primary_api_key = cls._first_nonempty(
+            os.getenv("LLM_API_KEY", ""),
+            os.getenv(
+                {
+                    "nvidia": "NVIDIA_API_KEY",
+                    "openrouter": "OPENROUTER_API_KEY",
+                    "chutes": "CHUTES_API_KEY",
+                }.get(primary_provider, ""),
+                "",
+            ),
+        )
+        fallback_api_key = cls._first_nonempty(
+            os.getenv("FALLBACK_API_KEY", ""),
+            os.getenv(
+                {
+                    "nvidia": "NVIDIA_API_KEY",
+                    "openrouter": "OPENROUTER_API_KEY",
+                    "chutes": "CHUTES_API_KEY",
+                }.get(fallback_provider, ""),
+                "",
+            ),
+        )
+
+        primary_base_url = cls._first_nonempty(
+            os.getenv("LLM_BASE_URL", ""),
+            os.getenv(
+                {
+                    "nvidia": "NVIDIA_BASE_URL",
+                    "openrouter": "OPENROUTER_BASE_URL",
+                    "chutes": "CHUTES_BASE_URL",
+                }.get(primary_provider, ""),
+                "",
+            ),
+            "https://integrate.api.nvidia.com/v1",
+        )
+        fallback_base_url = cls._first_nonempty(
+            os.getenv("FALLBACK_BASE_URL", ""),
+            os.getenv(
+                {
+                    "nvidia": "NVIDIA_BASE_URL",
+                    "openrouter": "OPENROUTER_BASE_URL",
+                    "chutes": "CHUTES_BASE_URL",
+                }.get(fallback_provider, ""),
+                "",
+            ),
+            "https://openrouter.ai/api/v1",
+        )
+
         primary = ProviderConfig(
-            provider=os.getenv("LLM_PROVIDER", "nvidia"),
-            base_url=os.getenv("LLM_BASE_URL", "https://integrate.api.nvidia.com/v1"),
-            api_key=os.getenv("LLM_API_KEY", ""),
-            model=os.getenv("LLM_MODEL", "minimaxai/minimax-m2.7"),
+            provider=primary_provider,
+            base_url=primary_base_url,
+            api_key=primary_api_key,
+            model=os.getenv("LLM_MODEL", "meta/llama-3.1-70b-instruct"),
         )
 
         fallback = ProviderConfig(
-            provider=os.getenv("FALLBACK_PROVIDER", "openrouter"),
-            base_url=os.getenv("FALLBACK_BASE_URL", "https://openrouter.ai/api/v1"),
-            api_key=os.getenv("FALLBACK_API_KEY", ""),
-            model=os.getenv("FALLBACK_MODEL", "nousresearch/hermes-3-llama-3.1-405b:free"),
+            provider=fallback_provider,
+            base_url=fallback_base_url,
+            api_key=fallback_api_key,
+            model=os.getenv("FALLBACK_MODEL", "meta/llama-3.1-70b-instruct"),
         )
 
         allow_fallback = os.getenv("ALLOW_PROVIDER_FALLBACK", "true").strip().lower() == "true"

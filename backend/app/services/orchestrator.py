@@ -1,6 +1,7 @@
 import json
+import copy
 from pathlib import Path
-from typing import Any
+from typing import Any, Awaitable, Callable
 
 from pydantic import ValidationError
 
@@ -49,6 +50,8 @@ class PipelineOrchestrator:
         schema_cls,
         payload: dict[str, Any],
         pipeline: list[dict[str, Any]],
+        progress_callback: Callable[[list[dict[str, Any]], list[dict[str, Any]]], Awaitable[None]] | None = None,
+        candidates_out: list[dict[str, Any]] | None = None,
         temperature: float = 0.2,
     ):
         prompt = self._prompt(agent_name)
@@ -69,6 +72,8 @@ class PipelineOrchestrator:
                         {"errors": meta.get("errors", [])},
                     )
                 )
+            if progress_callback is not None:
+                await progress_callback(pipeline, candidates_out or [])
             return model
         except ValidationError as exc:
             fallback_model = schema_cls.model_validate(self._demo(agent_name))
@@ -88,6 +93,8 @@ class PipelineOrchestrator:
                     {"error": str(exc)},
                 )
             )
+            if progress_callback is not None:
+                await progress_callback(pipeline, candidates_out or [])
             return fallback_model
         except Exception as exc:
             pipeline.append(
@@ -98,6 +105,8 @@ class PipelineOrchestrator:
                     {"error": str(exc)},
                 )
             )
+            if progress_callback is not None:
+                await progress_callback(pipeline, candidates_out or [])
             raise
 
     @staticmethod
@@ -112,9 +121,18 @@ class PipelineOrchestrator:
             recommendation="Reject",
         )
 
-    async def run_pipeline(self, run_data: dict) -> dict:
+    async def run_pipeline(
+        self,
+        run_data: dict,
+        progress_callback: Callable[[list[dict[str, Any]], list[dict[str, Any]]], Awaitable[None]] | None = None,
+    ) -> dict:
         pipeline: list[dict[str, Any]] = []
         candidates_out: list[dict[str, Any]] = []
+
+        async def emit_progress() -> None:
+            if progress_callback is None:
+                return
+            await progress_callback(copy.deepcopy(pipeline), copy.deepcopy(candidates_out))
 
         rubric = await self._run_agent(
             agent_name="jd_deconstruction",
@@ -125,6 +143,8 @@ class PipelineOrchestrator:
                 "job_description": run_data["job_description"],
             },
             pipeline=pipeline,
+            progress_callback=progress_callback,
+            candidates_out=candidates_out,
         )
 
         context = await self._run_agent(
@@ -136,6 +156,8 @@ class PipelineOrchestrator:
                 "job_rubric": rubric.model_dump(),
             },
             pipeline=pipeline,
+            progress_callback=progress_callback,
+            candidates_out=candidates_out,
         )
 
         for candidate in run_data.get("candidates", []):
@@ -153,6 +175,8 @@ class PipelineOrchestrator:
                         "professional_links": links,
                     },
                     pipeline=pipeline,
+                    progress_callback=progress_callback,
+                    candidates_out=candidates_out,
                 )
 
                 evidence = await self._run_agent(
@@ -165,6 +189,8 @@ class PipelineOrchestrator:
                         "job_rubric": rubric.model_dump(),
                     },
                     pipeline=pipeline,
+                    progress_callback=progress_callback,
+                    candidates_out=candidates_out,
                 )
 
                 transfer = await self._run_agent(
@@ -176,6 +202,8 @@ class PipelineOrchestrator:
                         "candidate_evidence": evidence.model_dump(),
                     },
                     pipeline=pipeline,
+                    progress_callback=progress_callback,
+                    candidates_out=candidates_out,
                 )
 
                 footprint = await self._run_agent(
@@ -188,6 +216,8 @@ class PipelineOrchestrator:
                         "job_rubric": rubric.model_dump(),
                     },
                     pipeline=pipeline,
+                    progress_callback=progress_callback,
+                    candidates_out=candidates_out,
                 )
 
                 risk = await self._run_agent(
@@ -201,6 +231,8 @@ class PipelineOrchestrator:
                         "job_rubric": rubric.model_dump(),
                     },
                     pipeline=pipeline,
+                    progress_callback=progress_callback,
+                    candidates_out=candidates_out,
                 )
 
                 score = calculate_score(
@@ -219,6 +251,7 @@ class PipelineOrchestrator:
                         score.model_dump(),
                     )
                 )
+                await emit_progress()
 
                 strengths = [item.skill for item in evidence.evidence_items][:5]
                 gaps = [item.requirement for item in transfer.missing_requirements][:5]
@@ -235,6 +268,8 @@ class PipelineOrchestrator:
                         "hiring_context": context.model_dump(),
                     },
                     pipeline=pipeline,
+                    progress_callback=progress_callback,
+                    candidates_out=candidates_out,
                 )
 
                 interview = await self._run_agent(
@@ -248,6 +283,8 @@ class PipelineOrchestrator:
                         "risk_audit": risk.model_dump(),
                     },
                     pipeline=pipeline,
+                    progress_callback=progress_callback,
+                    candidates_out=candidates_out,
                 )
 
                 candidates_out.append(
@@ -264,6 +301,7 @@ class PipelineOrchestrator:
                         "interview_pack": interview.model_dump(),
                     }
                 )
+                await emit_progress()
             except Exception as exc:
                 failed_score = self._failed_score()
                 candidates_out.append(
@@ -290,6 +328,7 @@ class PipelineOrchestrator:
                         {"error": str(exc)},
                     )
                 )
+                await emit_progress()
 
         ranked = sorted(candidates_out, key=lambda c: c["score"]["final_score"], reverse=True)
 
@@ -322,6 +361,8 @@ class PipelineOrchestrator:
                 "candidate_count": len(candidates_out),
             },
             pipeline=pipeline,
+            progress_callback=progress_callback,
+            candidates_out=candidates_out,
         )
 
         report_text = report_model.summary or "Final report generated"

@@ -1,33 +1,40 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
 import {
   Bell,
   BriefcaseBusiness,
   ChartColumnBig,
-  ChevronDown,
   CircleHelp,
   LayoutDashboard,
+  LogOut,
   Menu,
   Plus,
   Search,
-  Settings,
-  ShieldCheck,
   Sparkles,
-  SunMedium,
   Users,
 } from "lucide-react";
+import { getCurrentUser, getNotifications, logout, markAllNotificationsRead, markNotificationRead } from "@/lib/api";
+import { NotificationItem } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const navItems = [
-  { href: "/", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/runs/new", label: "Hiring Runs", icon: BriefcaseBusiness },
-  { href: `/runs/demo-sales-engineer-2025/shortlist`, label: "Shortlist", icon: ShieldCheck },
-  { href: `/runs/demo-sales-engineer-2025/report`, label: "Reports", icon: ChartColumnBig },
-  { href: "#", label: "Candidates", icon: Users, disabled: true },
-  { href: "#", label: "Settings", icon: Settings, disabled: true },
+  { href: "/jobs", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/jobs/new", label: "New Posting", icon: BriefcaseBusiness },
+  { href: "/candidates", label: "Candidates", icon: Users },
+  { href: "/reports", label: "Reports", icon: ChartColumnBig },
 ];
+
+function initialsFromName(name: string) {
+  return name
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() || "")
+    .join("");
+}
 
 export function AppShell({
   title,
@@ -40,7 +47,99 @@ export function AppShell({
   actions?: React.ReactNode;
   children: React.ReactNode;
 }) {
+  const router = useRouter();
   const pathname = usePathname();
+  const [displayName, setDisplayName] = useState("Recruiter");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [notificationOpen, setNotificationOpen] = useState(false);
+  const [notificationLoading, setNotificationLoading] = useState(false);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const notificationPanelRef = useRef<HTMLDivElement | null>(null);
+
+  function submitSearch() {
+    const query = searchQuery.trim();
+    if (!query) {
+      router.push("/candidates");
+      return;
+    }
+    router.push(`/candidates?q=${encodeURIComponent(query)}`);
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadUser() {
+      try {
+        const user = await getCurrentUser();
+        if (cancelled) return;
+        setDisplayName(user.full_name || user.email);
+      } catch {
+        if (cancelled) return;
+      }
+    }
+    void loadUser();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function loadNotifications() {
+    setNotificationLoading(true);
+    try {
+      const response = await getNotifications();
+      setNotifications(response.items);
+      setUnreadCount(response.unread_count);
+    } catch {
+      // Keep UI non-blocking if notifications fail.
+    } finally {
+      setNotificationLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadNotifications();
+    const handle = setInterval(() => {
+      void loadNotifications();
+    }, 5000);
+    return () => clearInterval(handle);
+  }, []);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (!notificationPanelRef.current) return;
+      if (!notificationPanelRef.current.contains(event.target as Node)) {
+        setNotificationOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  function hrefForNotification(item: NotificationItem): string {
+    if (item.notification_type === "pipeline_completed" && item.candidate_id) {
+      return `/candidates/${item.candidate_id}/report`;
+    }
+    if (item.candidate_id) {
+      return `/candidates/${item.candidate_id}`;
+    }
+    return "/reports";
+  }
+
+  useEffect(() => {
+    function handleKey(event: KeyboardEvent) {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        searchInputRef.current?.focus();
+      }
+      if (event.key === "Escape" && document.activeElement === searchInputRef.current) {
+        setSearchQuery("");
+        searchInputRef.current?.blur();
+      }
+    }
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, []);
 
   return (
     <div className="min-h-screen bg-[#f7f9fc]">
@@ -56,23 +155,10 @@ export function AppShell({
           <nav className="mt-6 space-y-1">
             {navItems.map((item) => {
               const Icon = item.icon;
-              const active =
-                item.href !== "#" && (pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href)));
-              if (item.disabled) {
-                return (
-                  <div
-                    key={item.label}
-                    className="flex items-center gap-3 rounded-xl px-4 py-3 text-[17px] font-medium text-slate-600 opacity-55"
-                  >
-                    <Icon className="h-5 w-5" />
-                    {item.label}
-                  </div>
-                );
-              }
-
+              const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
               return (
                 <Link
-                  key={item.label}
+                  key={item.href}
                   href={item.href}
                   className={cn(
                     "flex items-center gap-3 rounded-xl px-4 py-3 text-[17px] font-medium transition",
@@ -110,40 +196,133 @@ export function AppShell({
         </aside>
 
         <main className="min-w-0 flex-1">
-          <div className="border-b border-slate-200 bg-white px-6 py-4">
+          <div className="border-b border-slate-200 bg-white px-6 py-4 print:hidden">
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div className="flex min-w-[300px] flex-1 items-center gap-3">
-                <button className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 text-slate-500">
+                <Link
+                  href="/jobs"
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 text-slate-500"
+                  title="Dashboard"
+                >
                   <Menu className="h-5 w-5" />
-                </button>
-                <div className="flex h-11 w-full max-w-[740px] items-center rounded-xl border border-slate-200 px-3">
+                </Link>
+                <div className="flex h-12 w-full max-w-[760px] items-center rounded-2xl border border-slate-200 bg-white px-3 shadow-sm">
                   <Search className="h-4 w-4 text-slate-400" />
                   <input
-                    readOnly
-                    value="Search candidates, hiring runs, roles, skills..."
-                    className="ml-2 w-full border-0 bg-transparent text-[17px] text-slate-500 outline-none"
+                    ref={searchInputRef}
+                    value={searchQuery}
+                    onChange={(event) => setSearchQuery(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        submitSearch();
+                      }
+                    }}
+                    placeholder="Search candidates, hiring runs, roles, skills..."
+                    className="ml-2 w-full border-0 bg-transparent text-[17px] text-slate-600 placeholder:text-slate-400 outline-none"
                   />
-                  <span className="rounded-lg border border-slate-200 px-2 py-1 text-xs text-slate-500">Ctrl K</span>
+                  <button
+                    type="button"
+                    onClick={submitSearch}
+                    className="inline-flex min-w-[42px] flex-col items-center justify-center rounded-lg border border-slate-200 bg-slate-50 px-1 py-1 text-[10px] font-semibold leading-none text-slate-500"
+                    title="Search"
+                  >
+                    <span>CTRL</span>
+                    <span className="mt-0.5">K</span>
+                  </button>
                 </div>
               </div>
               <div className="flex items-center gap-3">
-                <button className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-accent text-white">
+                <Link
+                  href="/jobs/new"
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-accent text-white"
+                  title="Create posting"
+                >
                   <Plus className="h-5 w-5" />
-                </button>
-                <button className="relative inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 text-slate-600">
-                  <Bell className="h-5 w-5" />
-                  <span className="absolute right-0 top-0 h-4 w-4 rounded-full bg-red-500 text-[10px] text-white">3</span>
-                </button>
-                <button className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 text-slate-600">
-                  <SunMedium className="h-5 w-5" />
-                </button>
+                </Link>
+                <div className="relative" ref={notificationPanelRef}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNotificationOpen((current) => !current);
+                      void loadNotifications();
+                    }}
+                    className="relative inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 text-slate-600"
+                    title="Notifications"
+                  >
+                    <Bell className="h-5 w-5" />
+                    {unreadCount > 0 ? (
+                      <span className="absolute -right-1 -top-1 inline-flex min-h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white">
+                        {unreadCount > 9 ? "9+" : unreadCount}
+                      </span>
+                    ) : null}
+                  </button>
+                  {notificationOpen ? (
+                    <div className="absolute right-0 z-40 mt-2 w-[380px] max-w-[92vw] rounded-2xl border border-slate-200 bg-white p-3 shadow-xl">
+                      <div className="mb-2 flex items-center justify-between">
+                        <div className="text-sm font-semibold text-slate-900">Notifications</div>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            await markAllNotificationsRead();
+                            await loadNotifications();
+                          }}
+                          className="text-xs font-semibold text-accent hover:underline"
+                        >
+                          Mark all as read
+                        </button>
+                      </div>
+                      <div className="max-h-[360px] space-y-2 overflow-auto pr-1">
+                        {notificationLoading ? <div className="p-2 text-xs text-slate-500">Loading...</div> : null}
+                        {!notificationLoading && notifications.length === 0 ? (
+                          <div className="p-2 text-xs text-slate-500">No notifications yet.</div>
+                        ) : null}
+                        {notifications.map((item) => (
+                          <Link
+                            key={item.id}
+                            href={hrefForNotification(item)}
+                            onClick={async () => {
+                              if (!item.is_read) {
+                                await markNotificationRead(item.id);
+                                await loadNotifications();
+                              }
+                              setNotificationOpen(false);
+                            }}
+                            className={cn(
+                              "block rounded-xl border px-3 py-2 transition",
+                              item.is_read ? "border-slate-200 bg-slate-50" : "border-blue-200 bg-blue-50",
+                            )}
+                          >
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="text-sm font-semibold text-slate-900">{item.title}</div>
+                              <div className="text-[10px] text-slate-500">{new Date(item.created_at).toLocaleTimeString()}</div>
+                            </div>
+                            <p className="mt-1 text-xs text-slate-600">{item.body}</p>
+                          </Link>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
                 <div className="hidden items-center gap-3 lg:flex">
-                  <div className="grid h-10 w-10 place-items-center rounded-full bg-slate-100 text-sm font-semibold text-slate-700">AS</div>
-                  <div>
-                    <div className="text-sm font-semibold text-slate-900">Arjun Singh</div>
-                    <div className="text-xs text-slate-500">Talent Partner</div>
+                  <div className="grid h-10 w-10 place-items-center rounded-full bg-slate-100 text-sm font-semibold text-slate-700">
+                    {initialsFromName(displayName) || "JR"}
                   </div>
-                  <ChevronDown className="h-4 w-4 text-slate-500" />
+                  <div>
+                    <div className="text-sm font-semibold text-slate-900">{displayName}</div>
+                    <div className="text-xs text-slate-500">Recruiter Workspace</div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      logout();
+                      router.replace("/auth/login");
+                    }}
+                    className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                  >
+                    <LogOut className="h-4 w-4" />
+                    Logout
+                  </button>
                 </div>
               </div>
             </div>
@@ -163,15 +342,15 @@ export function AppShell({
                 <div className="flex items-center gap-3">{actions}</div>
               </div>
               {children}
-              <footer className="mt-8 border-t border-slate-100 pt-4">
+              <footer className="mt-8 border-t border-slate-100 pt-4 print:hidden">
                 <div className="flex flex-col gap-4 text-[12px] text-slate-500 md:flex-row md:items-center md:justify-between">
                   <p className="max-w-2xl leading-6">
-                    Decision-support for recruiters using multi-agent evidence review, deterministic scoring, and bias-aware hiring workflows.
+                    Decision-support for recruiters using multi-agent evidence review, deterministic scoring, and database-backed workflow state.
                   </p>
                   <div className="flex flex-wrap gap-x-6 gap-y-2">
                     <span>Frontend: Next.js + Tailwind</span>
-                    <span>Backend: FastAPI over SSH tunnel</span>
-                    <span>Mode: Demo-ready</span>
+                    <span>Backend: FastAPI + SQLite</span>
+                    <span>Mode: Org MVP</span>
                   </div>
                 </div>
               </footer>

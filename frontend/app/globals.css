@@ -8,6 +8,7 @@
 
 html {
   background: #f7f9fc;
+  font-size: 90%;
 }
 
 body {
@@ -15,6 +16,7 @@ body {
   color: #162238;
   background: #f7f9fc;
   font-family: var(--font-plex), sans-serif;
+  overflow-x: hidden;
 }
 
 * {
@@ -28,4 +30,24 @@ body {
 pre {
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+@media print {
+  aside,
+  .print\:hidden {
+    display: none !important;
+  }
+
+  main {
+    width: 100% !important;
+  }
+
+  body,
+  html {
+    background: #fff !important;
+  }
+
+  section {
+    break-inside: avoid;
+  }
 }

@@ -4,3 +4,11 @@ pydantic
 python-dotenv
 httpx
 python-multipart
+pymupdf
+sqlalchemy>=2.0
+asyncpg
+alembic
+passlib[bcrypt]
+python-jose[cryptography]
+email-validator
+aiosqlite

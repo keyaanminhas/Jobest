@@ -1,6 +1,6 @@
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class JobRubricOutput(BaseModel):
@@ -69,6 +69,53 @@ class TransferableSkillsOutput(BaseModel):
     transferable_matches: list[TransferMatch] = Field(default_factory=list)
     missing_requirements: list[MissingRequirement] = Field(default_factory=list)
 
+    @staticmethod
+    def _coerce_transfer_list(value: Any) -> list[dict[str, Any]]:
+        if not isinstance(value, list):
+            return []
+        coerced: list[dict[str, Any]] = []
+        for item in value:
+            if isinstance(item, dict):
+                coerced.append(item)
+            elif isinstance(item, str):
+                coerced.append(
+                    {
+                        "requirement": item,
+                        "candidate_skill": item,
+                        "evidence": "",
+                        "reasoning": "Normalized from string output",
+                        "confidence": "medium",
+                    }
+                )
+        return coerced
+
+    @staticmethod
+    def _coerce_missing_list(value: Any) -> list[dict[str, Any]]:
+        if not isinstance(value, list):
+            return []
+        coerced: list[dict[str, Any]] = []
+        for item in value:
+            if isinstance(item, dict):
+                coerced.append(item)
+            elif isinstance(item, str):
+                coerced.append(
+                    {
+                        "requirement": item,
+                        "reason": "Normalized from string output",
+                    }
+                )
+        return coerced
+
+    @field_validator("exact_matches", "transferable_matches", mode="before")
+    @classmethod
+    def _normalize_match_fields(cls, value: Any) -> list[dict[str, Any]]:
+        return cls._coerce_transfer_list(value)
+
+    @field_validator("missing_requirements", mode="before")
+    @classmethod
+    def _normalize_missing_fields(cls, value: Any) -> list[dict[str, Any]]:
+        return cls._coerce_missing_list(value)
+
 
 class ProfessionalFootprintOutput(BaseModel):
     portfolio_score: float = 50
@@ -104,6 +151,28 @@ class InterviewPackOutput(BaseModel):
     technical_questions: list[InterviewQuestion] = Field(default_factory=list)
     behavioral_questions: list[InterviewQuestion] = Field(default_factory=list)
     risk_validation_questions: list[InterviewQuestion] = Field(default_factory=list)
+
+    @staticmethod
+    def _coerce_questions(value: Any) -> list[dict[str, Any]]:
+        if not isinstance(value, list):
+            return []
+        coerced: list[dict[str, Any]] = []
+        for item in value:
+            if isinstance(item, dict):
+                coerced.append(item)
+            elif isinstance(item, str):
+                coerced.append(
+                    {
+                        "question": item,
+                        "what_to_listen_for": "Ask for concrete, role-relevant evidence and measurable outcomes.",
+                    }
+                )
+        return coerced
+
+    @field_validator("technical_questions", "behavioral_questions", "risk_validation_questions", mode="before")
+    @classmethod
+    def _normalize_question_fields(cls, value: Any) -> list[dict[str, Any]]:
+        return cls._coerce_questions(value)
 
 
 class FinalReportOutput(BaseModel):
