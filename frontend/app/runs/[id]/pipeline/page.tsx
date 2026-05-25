@@ -64,11 +64,11 @@ export default function PipelinePage() {
   return (
     <AppShell
       title="Hiring Pipeline"
-      subtitle="Jobest is orchestrating specialized AI agents to evaluate candidates with evidence and context."
+      subtitle="Jobest orchestrates specialized AI agents to evaluate candidates with objective evidence and hiring context."
       actions={
         <div className="flex flex-wrap gap-3">
-          <PrimaryButton href={`/runs/${id}/shortlist`}>Resume Run</PrimaryButton>
-          <SecondaryButton href={`/runs/${id}/report`}>Use Cached Output</SecondaryButton>
+          <PrimaryButton href={`/runs/${id}/shortlist`}>View Shortlist</PrimaryButton>
+          <SecondaryButton href={`/runs/${id}/report`}>View Full Report</SecondaryButton>
         </div>
       }
     >
@@ -79,12 +79,12 @@ export default function PipelinePage() {
 
           return (
             <div className="space-y-4">
-              <div className="text-[13px] text-slate-500">
-                Hiring Runs &nbsp; &gt; &nbsp; {run.title} &nbsp; &gt; &nbsp; Pipeline
+              <div className="text-[13px] text-slate-500 font-medium">
+                Hiring Runs &nbsp; &gt; &nbsp; {run.title} &nbsp; &gt; &nbsp; Pipeline Status
               </div>
               <Panel
-                title="Hiring Pipeline"
-                subtitle="Visible orchestration of specialized AI agents, modeled more closely on the reference pipeline screen."
+                title="AI Agent Orchestration"
+                subtitle="Real-time multi-agent orchestration deconstructing jobs and auditing candidate profiles."
               >
                 <div className="overflow-x-auto pb-1">
                   <div className="flex min-w-[1180px] items-start justify-between gap-3">
@@ -125,7 +125,7 @@ export default function PipelinePage() {
               </Panel>
 
               <div className="grid gap-6 xl:grid-cols-[1.5fr_0.85fr]">
-                <Panel title="Agent Execution Timeline" subtitle="Each stage includes status, summary, and raw structured payload.">
+                <Panel title="Agent Execution Timeline" subtitle="Timeline of specialized subagents, audit trails, and structured JSON outputs.">
                   <div className="space-y-4">
                     {stages.map((stage, index) => (
                       <div key={`${stage.stage}-${index}`} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -135,7 +135,7 @@ export default function PipelinePage() {
                           </div>
                           <div className="min-w-0 flex-1">
                             <div className="flex flex-wrap items-center gap-3">
-                            <h3 className="font-heading text-lg font-bold text-slate-950">{stage.stage}</h3>
+                              <h3 className="font-heading text-lg font-bold text-slate-950">{stage.stage}</h3>
                               <StatusBadge status={stage.status} />
                             </div>
                             <p className="mt-1 text-[13px] leading-6 text-slate-500">{stage.summary}</p>
@@ -152,6 +152,11 @@ export default function PipelinePage() {
                         </div>
                       </div>
                     ))}
+                    {stages.length === 0 && (
+                      <div className="rounded-xl border border-dashed border-slate-200 p-8 text-center text-slate-500 text-sm">
+                        Pipeline has started. Agent logs will render here in real-time as execution progresses.
+                      </div>
+                    )}
                   </div>
                 </Panel>
 
@@ -183,15 +188,15 @@ export default function PipelinePage() {
                     </dl>
                     <div className="mt-5 space-y-3">
                       <PrimaryButton href={`/runs/${id}/shortlist`} className="w-full">
-                        Resume Run
+                        View Shortlist
                       </PrimaryButton>
                       <SecondaryButton href={`/runs/${id}/report`} className="w-full">
-                        Use Cached Output
+                        View Full Report
                       </SecondaryButton>
                     </div>
                   </Panel>
 
-                  <Panel title="How Jobest Evaluates" subtitle="A clearer explanation card aligned with the original design direction.">
+                  <Panel title="Evaluation Methodology" subtitle="Evidence-backed decisions, objective criteria.">
                     <div className="rounded-xl bg-slate-50 p-5">
                       <div className="mb-4 inline-flex rounded-2xl bg-blue-100 p-3 text-accent">
                         <Sparkles className="h-5 w-5" />

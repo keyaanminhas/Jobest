@@ -24,7 +24,7 @@ export default function ShortlistPage() {
       actions={
         <div className="flex gap-3">
           <PrimaryButton href="/runs/new">Create Hiring Run</PrimaryButton>
-          <SecondaryButton href={`/runs/${id}/pipeline`}>Run Demo Scenario</SecondaryButton>
+          <SecondaryButton href={`/runs/${id}/pipeline`}>View Active Pipeline</SecondaryButton>
         </div>
       }
     >
@@ -64,8 +64,8 @@ export default function ShortlistPage() {
                     <div>Action</div>
                   </div>
                   <div className="divide-y divide-slate-200">
-                    {run.results?.top_candidates.map((candidate) => {
-                      const keyRisk = candidate.key_risks[0] ?? "Low";
+                    {(run.results?.top_candidates || []).map((candidate) => {
+                      const keyRisk = candidate.key_risks?.[0] ?? "Low";
                       return (
                         <div key={candidate.candidate_name} className="grid gap-4 px-4 py-3 lg:grid-cols-[56px_1.2fr_1fr_110px_145px_1fr_0.9fr_120px] lg:items-center">
                           <div className="grid h-9 w-9 place-items-center rounded-full bg-slate-100 font-semibold text-slate-700">{candidate.rank}</div>
@@ -88,37 +88,84 @@ export default function ShortlistPage() {
                         </div>
                       );
                     })}
+                    {(!run.results?.top_candidates || run.results.top_candidates.length === 0) && (
+                      <div className="p-8 text-center text-slate-500 text-sm">
+                        No candidates have been evaluated in this run yet. Run the pipeline deconstruction first.
+                      </div>
+                    )}
                   </div>
                   <div className="flex items-center justify-between border-t border-slate-200 bg-white px-4 py-3 text-[13px] text-slate-500">
-                    <span>Showing 1 to {run.results?.top_candidates.length ?? 0} of {run.results?.top_candidates.length ?? 0} candidates</span>
+                    <span>Showing 1 to {run.results?.top_candidates?.length ?? 0} of {run.results?.top_candidates?.length ?? 0} candidates</span>
                     <span>Rows per page 10</span>
                   </div>
                 </div>
               </Panel>
 
               <div className="space-y-4">
-                <Panel title="Score Distribution">
-                  <div className="flex items-center gap-6">
-                    <div className="relative h-36 w-36 rounded-full bg-[conic-gradient(#22c55e_0_40%,#facc15_40%_80%,#ef4444_80%_100%)]">
-                      <div className="absolute inset-8 rounded-full bg-white" />
-                    </div>
-                    <div className="space-y-2 text-[13px] text-slate-600">
-                      <div>80-100 (2)</div>
-                      <div>60-79 (2)</div>
-                      <div>40-59 (1)</div>
-                      <div>0-39 (0)</div>
-                    </div>
-                  </div>
-                </Panel>
+                {(() => {
+                  const candidates = run.results?.top_candidates ?? [];
+                  const c80 = candidates.filter((c) => c.final_score >= 80).length;
+                  const c60 = candidates.filter((c) => c.final_score >= 60 && c.final_score < 80).length;
+                  const c40 = candidates.filter((c) => c.final_score >= 40 && c.final_score < 60).length;
+                  const c0 = candidates.filter((c) => c.final_score < 40).length;
+                  const total = candidates.length || 1;
 
-                <Panel title="Shortlist Insight">
-                  <p className="text-[14px] leading-7 text-slate-600">
-                    Our system prioritizes verifiable impact, transferable skills, and lower risk to help you hire with confidence.
-                  </p>
-                  <div className="mt-4 rounded-xl bg-emerald-50 p-3 text-[13px] font-semibold text-emerald-700">
-                    100% of shortlisted candidates meet your minimum bar.
-                  </div>
-                </Panel>
+                  const p80 = (c80 / total) * 100;
+                  const p60 = (c60 / total) * 100;
+                  const p40 = (c40 / total) * 100;
+                  const p0 = (c0 / total) * 100;
+
+                  const gradient = `conic-gradient(#22c55e 0% ${p80}%, #eab308 ${p80}% ${p80 + p60}%, #ef4444 ${p80 + p60}% ${p80 + p60 + p40}%, #94a3b8 ${p80 + p60 + p40}% 100%)`;
+
+                  const strongCount = candidates.filter(
+                    (c) =>
+                      c.recommendation.includes("Recommend") ||
+                      c.recommendation.includes("Strong")
+                  ).length;
+                  const pct = candidates.length ? Math.round((strongCount / candidates.length) * 100) : 0;
+
+                  return (
+                    <>
+                      <Panel title="Score Distribution">
+                        <div className="flex items-center gap-6">
+                          <div
+                            className="relative h-36 w-36 rounded-full"
+                            style={{ background: gradient }}
+                          >
+                            <div className="absolute inset-8 rounded-full bg-white" />
+                          </div>
+                          <div className="space-y-2 text-[13px] text-slate-600">
+                            <div className="flex items-center gap-2">
+                              <span className="h-2.5 w-2.5 rounded-full bg-[#22c55e]" />
+                              80-100 ({c80})
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="h-2.5 w-2.5 rounded-full bg-[#eab308]" />
+                              60-79 ({c60})
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="h-2.5 w-2.5 rounded-full bg-[#ef4444]" />
+                              40-59 ({c40})
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="h-2.5 w-2.5 rounded-full bg-[#94a3b8]" />
+                              0-39 ({c0})
+                            </div>
+                          </div>
+                        </div>
+                      </Panel>
+
+                      <Panel title="Shortlist Insight">
+                        <p className="text-[14px] leading-7 text-slate-600">
+                          Our system prioritizes verifiable impact, transferable skills, and lower risk to help you hire with confidence.
+                        </p>
+                        <div className="mt-4 rounded-xl bg-emerald-50 p-3 text-[13px] font-semibold text-emerald-700">
+                          {pct}% of shortlisted candidates meet your hiring bar.
+                        </div>
+                      </Panel>
+                    </>
+                  );
+                })()}
               </div>
             </div>
           </div>

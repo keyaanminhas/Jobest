@@ -3,7 +3,7 @@
 import { AlertTriangle, ArrowLeft, Download, PlayCircle } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { createDemoRun, resolveRun } from "@/lib/api";
+import { createDemoRun, resolveRun, runHiringPipeline } from "@/lib/api";
 import { demoRunId } from "@/lib/demo-data";
 import { HiringRunRecord } from "@/lib/types";
 import { Panel, PrimaryButton } from "@/components/ui";
@@ -24,12 +24,24 @@ export function RunLoader({
 
   useEffect(() => {
     let cancelled = false;
+    let timerId: NodeJS.Timeout | null = null;
 
     async function load() {
       try {
         const result = await resolveRun(runId);
-        if (!cancelled) {
-          setState({ loading: false, run: result.run, offline: result.offline });
+        if (cancelled) return;
+
+        setState({ loading: false, run: result.run, offline: result.offline });
+
+        // Trigger run on the live backend database in the background if it's draft!
+        if (result.run.status === "draft" && !result.offline) {
+          runHiringPipeline(runId).catch(() => {});
+          result.run.status = "processing";
+        }
+
+        // If it's still running, poll again in 1.5 seconds for extremely visual progression!
+        if ((result.run.status === "processing" || result.run.status === "draft") && !result.offline) {
+          timerId = setTimeout(load, 1500);
         }
       } catch (error) {
         if (!cancelled) {
@@ -44,6 +56,7 @@ export function RunLoader({
     load();
     return () => {
       cancelled = true;
+      if (timerId) clearTimeout(timerId);
     };
   }, [runId]);
 

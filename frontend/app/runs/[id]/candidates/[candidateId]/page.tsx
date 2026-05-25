@@ -18,7 +18,7 @@ export default function CandidatePage() {
       actions={
         <div className="flex gap-3">
           <SecondaryButton href={`/runs/${id}/shortlist`}>Back to Shortlist</SecondaryButton>
-          <SecondaryButton href={`/runs/${id}/report`}>Download Report</SecondaryButton>
+          <SecondaryButton href={`/runs/${id}/report`}>View Full Report</SecondaryButton>
         </div>
       }
     >

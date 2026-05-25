@@ -26,6 +26,7 @@ class PipelineOrchestrator:
         self.llm_client = llm_client or LLMClient()
         self.prompts_dir = Path(__file__).resolve().parents[1] / "prompts"
         self.demo_dir = Path(__file__).resolve().parents[1] / "storage" / "demo"
+        self.on_progress = None
 
     def _prompt(self, name: str) -> str:
         return (self.prompts_dir / f"{name}.md").read_text(encoding="utf-8")
@@ -69,6 +70,8 @@ class PipelineOrchestrator:
                         {"errors": meta.get("errors", [])},
                     )
                 )
+            if self.on_progress:
+                self.on_progress(list(pipeline))
             return model
         except ValidationError as exc:
             fallback_model = schema_cls.model_validate(self._demo(agent_name))
@@ -88,6 +91,8 @@ class PipelineOrchestrator:
                     {"error": str(exc)},
                 )
             )
+            if self.on_progress:
+                self.on_progress(list(pipeline))
             return fallback_model
         except Exception as exc:
             pipeline.append(
@@ -98,6 +103,8 @@ class PipelineOrchestrator:
                     {"error": str(exc)},
                 )
             )
+            if self.on_progress:
+                self.on_progress(list(pipeline))
             raise
 
     @staticmethod
@@ -112,7 +119,8 @@ class PipelineOrchestrator:
             recommendation="Reject",
         )
 
-    async def run_pipeline(self, run_data: dict) -> dict:
+    async def run_pipeline(self, run_data: dict, on_progress = None) -> dict:
+        self.on_progress = on_progress
         pipeline: list[dict[str, Any]] = []
         candidates_out: list[dict[str, Any]] = []
 

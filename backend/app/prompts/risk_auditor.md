@@ -8,5 +8,10 @@ Rules:
 - Use only job-relevant professional evidence.
 - Do not use age, gender, race, religion, nationality, appearance, family status, politics, or health data.
 
-Expected output shape:
-{"risk_level":"low|medium|high", "risk_penalty":0, "risks":[], "recommended_interview_focus":[]}
+OUTPUT JSON SCHEMA:
+{
+  "risk_level": "low|medium|high",
+  "risk_penalty": 0.0,
+  "risks": ["string (identified risk or contradiction)"],
+  "recommended_interview_focus": ["string (topics to audit during interview)"]
+}

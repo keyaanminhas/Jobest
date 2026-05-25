@@ -8,5 +8,11 @@ Rules:
 - Use only job-relevant professional evidence.
 - Do not use age, gender, race, religion, nationality, appearance, family status, politics, or health data.
 
-Expected output shape:
-{"technical_lead_view":"", "hr_recruiter_view":"", "hiring_manager_view":"", "risk_auditor_view":"", "final_panel_recommendation":""}
+OUTPUT JSON SCHEMA:
+{
+  "technical_lead_view": "string (technical lead's opinion and review comments)",
+  "hr_recruiter_view": "string (hr recruiter's opinion and soft skills review)",
+  "hiring_manager_view": "string (hiring manager's commercial/context fit view)",
+  "risk_auditor_view": "string (risk auditor's review of contradictions/gaps)",
+  "final_panel_recommendation": "string (hiring recommendation: e.g., Strong Shortlist, Shortlist, Maybe, Reject)"
+}

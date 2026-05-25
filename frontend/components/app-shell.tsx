@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
 import {
   Bell,
   BriefcaseBusiness,
@@ -19,15 +20,9 @@ import {
   Users,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-
-const navItems = [
-  { href: "/", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/runs/new", label: "Hiring Runs", icon: BriefcaseBusiness },
-  { href: `/runs/demo-sales-engineer-2025/shortlist`, label: "Shortlist", icon: ShieldCheck },
-  { href: `/runs/demo-sales-engineer-2025/report`, label: "Reports", icon: ChartColumnBig },
-  { href: "#", label: "Candidates", icon: Users, disabled: true },
-  { href: "#", label: "Settings", icon: Settings, disabled: true },
-];
+import { listHiringRuns } from "@/lib/api";
+import { listRunsLocal } from "@/lib/storage";
+import { HiringRunRecord } from "@/lib/types";
 
 export function AppShell({
   title,
@@ -41,6 +36,115 @@ export function AppShell({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const [demoMode, setDemoMode] = useState<boolean>(false);
+  const [runs, setRuns] = useState<any[]>([]);
+  const [selectedRunId, setSelectedRunId] = useState<string>("");
+
+  useEffect(() => {
+    const isDemo = localStorage.getItem("jobest-demo-mode") === "true";
+    setDemoMode(isDemo);
+
+    async function loadData() {
+      let fetchedRuns: any[] = [];
+      try {
+        fetchedRuns = await listHiringRuns();
+      } catch (err) {
+        fetchedRuns = listRunsLocal();
+      }
+
+      // If demo mode is active or we have no runs, inject the demo run as an option
+      if (isDemo || fetchedRuns.length === 0) {
+        if (!fetchedRuns.some((r) => r.id === "demo-sales-engineer-2025")) {
+          fetchedRuns = [
+            {
+              id: "demo-sales-engineer-2025",
+              title: "Senior Sales Engineer (Demo)",
+              status: "completed",
+              created_at: new Date().toISOString(),
+              candidates: [],
+            },
+            ...fetchedRuns,
+          ];
+        }
+      }
+
+      setRuns(fetchedRuns);
+
+      // Parse current run ID from URL
+      const pathParts = pathname.split("/");
+      const urlRunId =
+        pathParts[1] === "runs" && pathParts[2] && pathParts[2] !== "new"
+          ? pathParts[2]
+          : null;
+
+      let activeId = "";
+      if (urlRunId) {
+        activeId = urlRunId;
+      } else {
+        const storedId = localStorage.getItem("jobest-selected-run-id");
+        if (storedId && fetchedRuns.some((r) => r.id === storedId)) {
+          activeId = storedId;
+        } else if (fetchedRuns.length > 0) {
+          activeId = fetchedRuns[0].id;
+        }
+      }
+
+      if (activeId) {
+        setSelectedRunId(activeId);
+        localStorage.setItem("jobest-selected-run-id", activeId);
+      }
+    }
+
+    loadData();
+  }, [pathname]);
+
+  const toggleDemoMode = () => {
+    const next = !demoMode;
+    setDemoMode(next);
+    localStorage.setItem("jobest-demo-mode", next ? "true" : "false");
+    
+    // Reset selected run if shifting out of demo mode
+    if (!next) {
+      localStorage.removeItem("jobest-selected-run-id");
+    }
+    
+    // Always redirect to dashboard on demo toggle to reinitialize cleanly
+    window.location.href = "/";
+  };
+
+  const handleRunChange = (newRunId: string) => {
+    setSelectedRunId(newRunId);
+    localStorage.setItem("jobest-selected-run-id", newRunId);
+
+    const pathParts = pathname.split("/");
+    if (pathParts[1] === "runs" && pathParts[2] && pathParts[2] !== "new") {
+      const pageType = pathParts[3]; // "shortlist", "report", "pipeline", "candidates"
+      if (pageType === "candidates") {
+        window.location.href = `/runs/${newRunId}/shortlist`;
+      } else if (pageType) {
+        window.location.href = `/runs/${newRunId}/${pageType}`;
+      } else {
+        window.location.href = `/runs/${newRunId}/shortlist`;
+      }
+    } else {
+      // Just reload dashboard/new run page to fetch the correct active data
+      window.location.reload();
+    }
+  };
+
+  const navItems = [
+    { href: "/", label: "Dashboard", icon: LayoutDashboard },
+    { href: "/runs/new", label: "New Hiring Run", icon: Plus },
+    ...(selectedRunId
+      ? [
+          { href: `/runs/${selectedRunId}/pipeline`, label: "Pipeline", icon: BriefcaseBusiness },
+          { href: `/runs/${selectedRunId}/shortlist`, label: "Shortlist", icon: ShieldCheck },
+          { href: `/runs/${selectedRunId}/report`, label: "Reports", icon: ChartColumnBig },
+        ]
+      : []),
+    { href: "#", label: "Candidates", icon: Users, disabled: true },
+    { href: "#", label: "Settings", icon: Settings, disabled: true },
+  ];
 
   return (
     <div className="min-h-screen bg-[#f7f9fc]">
@@ -57,7 +161,9 @@ export function AppShell({
             {navItems.map((item) => {
               const Icon = item.icon;
               const active =
-                item.href !== "#" && (pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href)));
+                item.href !== "#" &&
+                (pathname === item.href ||
+                  (item.href !== "/" && pathname.startsWith(item.href)));
               if (item.disabled) {
                 return (
                   <div
@@ -76,7 +182,9 @@ export function AppShell({
                   href={item.href}
                   className={cn(
                     "flex items-center gap-3 rounded-xl px-4 py-3 text-[17px] font-medium transition",
-                    active ? "bg-blue-50 text-accent" : "text-slate-600 hover:bg-slate-50 hover:text-ink",
+                    active
+                      ? "bg-blue-50 text-accent"
+                      : "text-slate-600 hover:bg-slate-50 hover:text-ink"
                   )}
                 >
                   <Icon className="h-5 w-5 shrink-0" />
@@ -127,16 +235,42 @@ export function AppShell({
                 </div>
               </div>
               <div className="flex items-center gap-3">
-                <button className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-accent text-white">
-                  <Plus className="h-5 w-5" />
-                </button>
-                <button className="relative inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 text-slate-600">
-                  <Bell className="h-5 w-5" />
-                  <span className="absolute right-0 top-0 h-4 w-4 rounded-full bg-red-500 text-[10px] text-white">3</span>
-                </button>
-                <button className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 text-slate-600">
-                  <SunMedium className="h-5 w-5" />
-                </button>
+                {/* Active Run Selector Dropdown */}
+                {runs.length > 0 && (
+                  <div className="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-1.5 bg-white shadow-sm">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 whitespace-nowrap">Run:</span>
+                    <select
+                      value={selectedRunId}
+                      onChange={(e) => handleRunChange(e.target.value)}
+                      className="border-0 bg-transparent text-sm font-semibold text-slate-800 outline-none cursor-pointer max-w-[180px] lg:max-w-[240px] truncate"
+                    >
+                      {runs.map((r) => (
+                        <option key={r.id} value={r.id}>
+                          {r.title}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {/* Demo Mode Switcher */}
+                <div className="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-1.5 bg-slate-50 shadow-sm">
+                  <span className="text-[12px] font-bold uppercase tracking-wider text-slate-500">Demo Mode</span>
+                  <button
+                    onClick={toggleDemoMode}
+                    className={cn(
+                      "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none",
+                      demoMode ? "bg-accent" : "bg-slate-300"
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        "pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out",
+                        demoMode ? "translate-x-4" : "translate-x-0"
+                      )}
+                    />
+                  </button>
+                </div>
                 <div className="hidden items-center gap-3 lg:flex">
                   <div className="grid h-10 w-10 place-items-center rounded-full bg-slate-100 text-sm font-semibold text-slate-700">AS</div>
                   <div>
@@ -170,8 +304,8 @@ export function AppShell({
                   </p>
                   <div className="flex flex-wrap gap-x-6 gap-y-2">
                     <span>Frontend: Next.js + Tailwind</span>
-                    <span>Backend: FastAPI over SSH tunnel</span>
-                    <span>Mode: Demo-ready</span>
+                    <span>Backend: FastAPI + Agent Orch</span>
+                    <span>Mode: {demoMode ? "Demo Mode" : "Live mode"}</span>
                   </div>
                 </div>
               </footer>

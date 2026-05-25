@@ -1,9 +1,11 @@
+import io
 import json
 import os
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, UploadFile, File, BackgroundTasks
+import pypdf
 
 from app.schemas.hiring import (
     CreateHiringRunRequest,
@@ -67,48 +69,74 @@ async def create_hiring_run(payload: CreateHiringRunRequest) -> HiringRunRespons
 
 
 @router.post("/hiring-runs/{run_id}/run", response_model=RunExecutionResponse, dependencies=[Depends(require_api_key)])
-async def run_pipeline(run_id: str) -> RunExecutionResponse:
+async def run_pipeline(run_id: str, background_tasks: BackgroundTasks) -> RunExecutionResponse:
     run = _load_run(run_id)
-    run["status"] = "processing"
-    _save_run(run)
-
-    try:
-        results = await orchestrator.run_pipeline(run)
-        run["results"] = results
-        run["status"] = "completed"
-        _save_run(run)
+    
+    if run.get("status") == "processing":
+        results = run.get("results") or {}
         return RunExecutionResponse(
             run_id=run_id,
-            status="completed",
+            status="processing",
             pipeline=results.get("pipeline", []),
             top_candidates=results.get("top_candidates", []),
-            report=results.get("report", ""),
+            report=results.get("report", "Pipeline is currently running..."),
         )
-    except Exception as exc:
-        run["status"] = "error"
-        run["results"] = {
-            "run_id": run_id,
-            "status": "error",
-            "pipeline": [
-                {
-                    "stage": "Pipeline",
-                    "status": "error",
-                    "summary": "Pipeline failed before completion",
-                    "raw_output": {"error": str(exc)},
+        
+    run["status"] = "processing"
+    # Initialize basic results on start
+    run["results"] = {
+        "run_id": run_id,
+        "status": "processing",
+        "pipeline": [],
+        "top_candidates": [],
+        "report": "Initializing pipeline deconstruction...",
+    }
+    _save_run(run)
+
+    async def execute_pipeline():
+        try:
+            def save_progress_callback(pipeline_stages: list):
+                run["results"] = {
+                    "run_id": run_id,
+                    "status": "processing",
+                    "pipeline": pipeline_stages,
+                    "top_candidates": [],
+                    "report": "Analyzing candidates...",
                 }
-            ],
-            "top_candidates": [],
-            "report": "Pipeline failed",
-            "error": str(exc),
-        }
-        _save_run(run)
-        return RunExecutionResponse(
-            run_id=run_id,
-            status="error",
-            pipeline=run["results"]["pipeline"],
-            top_candidates=[],
-            report="Pipeline failed",
-        )
+                _save_run(run)
+
+            results = await orchestrator.run_pipeline(run, on_progress=save_progress_callback)
+            run["results"] = results
+            run["status"] = "completed"
+            _save_run(run)
+        except Exception as exc:
+            run["status"] = "error"
+            run["results"] = {
+                "run_id": run_id,
+                "status": "error",
+                "pipeline": [
+                    {
+                        "stage": "Pipeline",
+                        "status": "error",
+                        "summary": "Pipeline failed before completion",
+                        "raw_output": {"error": str(exc)},
+                    }
+                ],
+                "top_candidates": [],
+                "report": f"Pipeline failed: {str(exc)}",
+                "error": str(exc),
+            }
+            _save_run(run)
+
+    background_tasks.add_task(execute_pipeline)
+
+    return RunExecutionResponse(
+        run_id=run_id,
+        status="processing",
+        pipeline=[],
+        top_candidates=[],
+        report="Started background pipeline execution.",
+    )
 
 
 @router.get("/hiring-runs/{run_id}/shortlist", response_model=ShortlistResponse, dependencies=[Depends(require_api_key)])
@@ -132,3 +160,55 @@ async def get_report(run_id: str) -> FinalReportResponse:
             raise HTTPException(status_code=409, detail="Report not ready. Run the pipeline first.")
         report_data = {"summary": report_text}
     return FinalReportResponse(run_id=run_id, report=report_data)
+
+
+@router.get("/hiring-runs/{run_id}", dependencies=[Depends(require_api_key)])
+async def get_hiring_run(run_id: str) -> dict:
+    return _load_run(run_id)
+
+
+@router.get("/hiring-runs", dependencies=[Depends(require_api_key)])
+async def list_hiring_runs() -> list:
+    runs = []
+    for path in RUNS_DIR.glob("*.json"):
+        try:
+            runs.append(json.loads(path.read_text(encoding="utf-8")))
+        except Exception:
+            pass
+    runs.sort(key=lambda r: r.get("created_at", ""), reverse=True)
+    return runs
+
+
+@router.post("/parse-pdf", dependencies=[Depends(require_api_key)])
+async def parse_pdf(file: UploadFile = File(...)) -> dict:
+    try:
+        content = await file.read()
+        pdf_file = io.BytesIO(content)
+        reader = pypdf.PdfReader(pdf_file)
+        text = ""
+        for page in reader.pages:
+            text += page.extract_text() or ""
+        
+        filename = file.filename or "Candidate"
+        # Remove extension
+        name_part = filename.rsplit(".", 1)[0]
+        # Clean up separators and camelCase/capitalization
+        cleaned = name_part.replace("_", " ").replace("-", " ").title()
+        
+        # Clean common professional suffixes for a cleaner Candidate Name
+        words = cleaned.split()
+        cleaned_words = []
+        for word in words:
+            if word.lower() not in ["resume", "cv", "portfolio", "developer", "engineer", "architect", "fullstack", "frontend", "backend", "dev", "analyst", "specialist"]:
+                cleaned_words.append(word)
+        
+        candidate_name = " ".join(cleaned_words).strip()
+        if not candidate_name:
+            candidate_name = cleaned
+        
+        return {
+            "candidate_name": candidate_name,
+            "resume_text": text.strip()
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Failed to parse PDF resume: {exc}")

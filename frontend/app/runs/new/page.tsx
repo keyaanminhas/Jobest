@@ -2,30 +2,145 @@
 
 import { AppShell } from "@/components/app-shell";
 import { EmptyState, Panel, PrimaryButton, SecondaryButton } from "@/components/ui";
-import { createDemoRun, createHiringRun, getReport, getShortlist, runHiringPipeline } from "@/lib/api";
+import { createDemoRun, createHiringRun, getReport, getShortlist, runHiringPipeline, parsePdf } from "@/lib/api";
 import { demoRun } from "@/lib/demo-data";
 import { saveRunLocal } from "@/lib/storage";
 import { CandidateInput, CandidateRecord, TopCandidate } from "@/lib/types";
-import { Plus, Trash2 } from "lucide-react";
+import { AlertCircle, Check, Loader2, Plus, Trash2, UploadCloud } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
 type CandidateForm = {
+  id: string;
   name: string;
   resume_text: string;
   profile_summary: string;
 };
 
 const blankCandidate = (): CandidateForm => ({
+  id: Math.random().toString(36).substring(7),
   name: "",
   resume_text: "",
   profile_summary: "",
 });
 
+type UploadProgress = {
+  id: string;
+  name: string;
+  size: number;
+  status: "idle" | "uploading" | "parsing" | "completed" | "error";
+  progress: number;
+  error?: string;
+};
+
 export default function NewRunPage() {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string>("");
+  const [uploadQueue, setUploadQueue] = useState<UploadProgress[]>([]);
+  const [isDragging, setIsDragging] = useState(false);
+
+  function handleDragOver(e: React.DragEvent) {
+    e.preventDefault();
+    setIsDragging(true);
+  }
+
+  function handleDragLeave() {
+    setIsDragging(false);
+  }
+
+  async function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setIsDragging(false);
+    
+    const files = e.dataTransfer.files;
+    if (!files || files.length === 0) return;
+    
+    const syntheticEvent = {
+      target: {
+        files: files
+      }
+    } as unknown as React.ChangeEvent<HTMLInputElement>;
+    
+    await handleFileSelect(syntheticEvent);
+  }
+
+  async function handleFileSelect(event: React.ChangeEvent<HTMLInputElement>) {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+
+    const fileList = Array.from(files);
+    
+    // Add all to upload queue
+    const newItems = fileList.map((file) => ({
+      id: Math.random().toString(36).substring(7),
+      name: file.name,
+      size: file.size,
+      status: "uploading" as const,
+      progress: 10,
+    }));
+
+    setUploadQueue((current) => [...current, ...newItems]);
+
+    // Define parsing task for a single file
+    async function processFile(file: File, queueItemId: string) {
+      // Step 1: Uploading progress simulation
+      setUploadQueue((current) =>
+        current.map((item) => (item.id === queueItemId ? { ...item, progress: 40, status: "uploading" } : item)),
+      );
+
+      try {
+        // Step 2: Call parsePdf api
+        setUploadQueue((current) =>
+          current.map((item) => (item.id === queueItemId ? { ...item, progress: 70, status: "parsing" } : item)),
+        );
+
+        const parsed = await parsePdf(file);
+
+        // Step 3: Populate candidate list
+        setCandidates((current) => {
+          // If the list only contains one empty candidate, overwrite it
+          const firstIsEmpty =
+            current.length === 1 &&
+            !current[0].name.trim() &&
+            !current[0].resume_text.trim() &&
+            !current[0].profile_summary.trim();
+
+          const newCandidate: CandidateForm = {
+            id: Math.random().toString(36).substring(7),
+            name: parsed.candidate_name,
+            resume_text: parsed.resume_text,
+            profile_summary: `Parsed from uploaded resume PDF: ${file.name}.`,
+          };
+
+          if (firstIsEmpty) {
+            return [newCandidate];
+          } else {
+            return [...current, newCandidate];
+          }
+        });
+
+        // Step 4: Mark complete in queue
+        setUploadQueue((current) =>
+          current.map((item) => (item.id === queueItemId ? { ...item, progress: 100, status: "completed" } : item)),
+        );
+      } catch (err) {
+        // Step 5: Mark failed in queue
+        const errMsg = err instanceof Error ? err.message : "Parsing failed";
+        setUploadQueue((current) =>
+          current.map((item) =>
+            item.id === queueItemId ? { ...item, progress: 100, status: "error", error: errMsg } : item,
+          ),
+        );
+      }
+    }
+
+    // Launch all processes in parallel!
+    fileList.forEach((file, index) => {
+      processFile(file, newItems[index].id);
+    });
+  }
+
   const [mode, setMode] = useState<"live" | "demo">("live");
   const [title, setTitle] = useState("Senior Sales Engineer");
   const [jobDescription, setJobDescription] = useState(demoRun.job_description);
@@ -35,6 +150,7 @@ export default function NewRunPage() {
   const [niceToHaveSkills, setNiceToHaveSkills] = useState(demoRun.nice_to_have_skills.join(", "));
   const [candidates, setCandidates] = useState<CandidateForm[]>(
     demoRun.candidates.slice(0, 3).map((candidate) => ({
+      id: Math.random().toString(36).substring(7),
       name: candidate.name,
       resume_text: candidate.resume_text,
       profile_summary:
@@ -45,8 +161,8 @@ export default function NewRunPage() {
     })),
   );
 
-  function updateCandidate(index: number, key: keyof CandidateForm, value: string) {
-    setCandidates((current) => current.map((item, itemIndex) => (itemIndex === index ? { ...item, [key]: value } : item)));
+  function updateCandidate(id: string, key: keyof CandidateForm, value: string) {
+    setCandidates((current) => current.map((item) => (item.id === id ? { ...item, [key]: value } : item)));
   }
 
   function loadDemo() {
@@ -59,6 +175,7 @@ export default function NewRunPage() {
     setNiceToHaveSkills(demoRun.nice_to_have_skills.join(", "));
     setCandidates(
       demoRun.candidates.map((candidate) => ({
+        id: Math.random().toString(36).substring(7),
         name: candidate.name,
         resume_text: candidate.resume_text,
         profile_summary:
@@ -107,95 +224,10 @@ export default function NewRunPage() {
 
       try {
         const created = await createHiringRun(payload);
-        const runResponse = await runHiringPipeline(created.run_id);
-        const [shortlistResponse, reportResponse] = await Promise.allSettled([
-          getShortlist(created.run_id),
-          getReport(created.run_id),
-        ]);
-
-        const shortlist =
-          shortlistResponse.status === "fulfilled" ? shortlistResponse.value.shortlist : runResponse.top_candidates ?? [];
-        const reportData =
-          reportResponse.status === "fulfilled"
-            ? reportResponse.value.report
-            : {
-                summary: runResponse.report,
-                final_recommendation: runResponse.report,
-                risks_to_verify: [],
-                candidate_explanations: [],
-                top_candidates: [],
-              };
-
-        const synthesizedCandidates: CandidateRecord[] = filteredCandidates.map((candidate) => {
-          const matched = shortlist.find(
-            (item: TopCandidate) => item.candidate_name.toLowerCase() === candidate.name.toLowerCase(),
-          );
-          return {
-            candidate,
-            status: matched?.status ?? "completed",
-            score:
-              matched?.score_breakdown ?? {
-                requirement_match: 0,
-                evidence_strength: 0,
-                professional_footprint: 50,
-                hiring_context_fit: 0,
-                risk_penalty: 0,
-                final_score: 0,
-                recommendation: "Reject",
-                score_explanation: "Detailed candidate output is unavailable from the live backend endpoints alone.",
-              },
-            evidence: {
-              evidence_items: matched?.top_strengths.map((skill) => ({
-                skill,
-                evidence: "Summarized from shortlist output.",
-                source: "shortlist",
-                confidence: "medium" as const,
-              })),
-            },
-            transferable_skills: {
-              exact_matches: matched?.top_strengths.map((skill) => ({
-                requirement: skill,
-                candidate_skill: skill,
-                evidence: "Summarized from shortlist output.",
-                confidence: "medium",
-              })),
-              transferable_matches: [],
-              missing_requirements: [],
-            },
-            risk_audit: {
-              risk_level: matched?.key_risks.length ? "medium" : "low",
-              risk_penalty: matched?.score_breakdown.risk_penalty ?? 0,
-              risks: matched?.key_risks ?? [],
-              recommended_interview_focus: matched?.key_risks ?? [],
-            },
-            panel_review: {
-              final_panel_recommendation: matched?.why ?? "Use shortlist and report data to guide deeper review.",
-            },
-            interview_pack: {
-              technical_questions: [],
-              behavioral_questions: [],
-              risk_validation_questions: [],
-            },
-            why_this_candidate: matched?.why ?? "Candidate rationale not available.",
-            why_not_this_candidate: "Use the live shortlist and report together with backend deep-dive artifacts when available.",
-          };
-        });
-
-        const localRun = {
+        saveRunLocal({
           ...created.run,
-          status: runResponse.status,
-          results: {
-            run_id: runResponse.run_id,
-            status: runResponse.status,
-            pipeline: runResponse.pipeline ?? [],
-            top_candidates: shortlist,
-            report: runResponse.report,
-            report_data: reportData,
-            candidates: synthesizedCandidates,
-          },
-        };
-
-        saveRunLocal(localRun);
+          status: "draft",
+        });
         router.push(`/runs/${created.run_id}/pipeline`);
       } catch {
         setError("Backend unavailable through the SSH tunnel. Switch to Demo Mode to continue the polished flow offline.");
@@ -319,15 +351,92 @@ export default function NewRunPage() {
             }
           >
             <div className="space-y-4">
+              {/* Batch PDF Upload Zone */}
+              <div
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                className={`rounded-[1.75rem] border-2 border-dashed p-6 text-center transition ${
+                  isDragging
+                    ? "border-accent bg-blue-50/50 scale-[0.99] border-solid"
+                    : "border-slate-200 bg-slate-50/40 hover:border-accent hover:bg-slate-50"
+                }`}
+              >
+                <div className="flex flex-col items-center justify-center">
+                  <UploadCloud className="h-10 w-10 text-slate-400" />
+                  <h3 className="mt-3 font-semibold text-slate-900">Batch Upload PDF Resumes</h3>
+                  <p className="mt-1 text-xs leading-5 text-slate-500">
+                    Drag & drop multiple PDF resumes here, or{" "}
+                    <label className="cursor-pointer font-semibold text-accent hover:underline">
+                      browse files
+                      <input
+                        type="file"
+                        multiple
+                        accept=".pdf"
+                        onChange={handleFileSelect}
+                        className="hidden"
+                      />
+                    </label>
+                  </p>
+                  <p className="mt-1 text-[10px] text-slate-400">PDF formats up to 10MB each</p>
+                </div>
+
+                {/* Uploading Status list */}
+                {uploadQueue.length > 0 && (
+                  <div className="mt-4 divide-y divide-slate-100 rounded-2xl border border-slate-200 bg-white p-3 text-left">
+                    {uploadQueue.map((item) => (
+                      <div key={item.id} className="flex items-center justify-between py-2 first:pt-0 last:pb-0">
+                        <div className="min-w-0 flex-1 pr-3">
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="truncate font-medium text-slate-800">{item.name}</span>
+                            <span className="text-[10px] font-semibold text-slate-400">
+                              {(item.size / 1024).toFixed(0)} KB
+                            </span>
+                          </div>
+                          {/* Progress bar */}
+                          <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+                            <div
+                              className={`h-full transition-all duration-300 ${
+                                item.status === "error"
+                                  ? "bg-red-500"
+                                  : item.status === "completed"
+                                  ? "bg-emerald-500"
+                                  : "bg-accent animate-pulse"
+                              }`}
+                              style={{ width: `${item.progress}%` }}
+                            />
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          {item.status === "completed" ? (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600">
+                              <Check className="h-3.5 w-3.5" /> Parsed
+                            </span>
+                          ) : item.status === "error" ? (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-red-600" title={item.error}>
+                              <AlertCircle className="h-3.5 w-3.5" /> Failed
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-accent animate-pulse">
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" /> {item.status === "uploading" ? "Uploading" : "Parsing"}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               {candidates.map((candidate, index) => (
-                <div key={`${candidate.name}-${index}`} className="rounded-[1.75rem] border border-slate-200 bg-slate-50/70 p-4">
+                <div key={candidate.id} className="rounded-[1.75rem] border border-slate-200 bg-slate-50/70 p-4">
                   <div className="mb-4 flex items-center justify-between">
                     <div className="font-semibold text-slate-900">Candidate {index + 1}</div>
                     {candidates.length > 1 ? (
                       <button
                         type="button"
-                        onClick={() => setCandidates((current) => current.filter((_, itemIndex) => itemIndex !== index))}
-                        className="rounded-2xl border border-slate-200 bg-white p-2 text-slate-500"
+                        onClick={() => setCandidates((current) => current.filter((item) => item.id !== candidate.id))}
+                        className="rounded-2xl border border-slate-200 bg-white p-2 text-slate-500 cursor-pointer hover:bg-slate-100"
                       >
                         <Trash2 className="h-4 w-4" />
                       </button>
@@ -338,7 +447,7 @@ export default function NewRunPage() {
                       <span className="text-sm font-semibold text-slate-700">Candidate name</span>
                       <input
                         value={candidate.name}
-                        onChange={(event) => updateCandidate(index, "name", event.target.value)}
+                        onChange={(event) => updateCandidate(candidate.id, "name", event.target.value)}
                         className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none transition focus:border-accent"
                       />
                     </label>
@@ -347,7 +456,7 @@ export default function NewRunPage() {
                       <textarea
                         rows={5}
                         value={candidate.resume_text}
-                        onChange={(event) => updateCandidate(index, "resume_text", event.target.value)}
+                        onChange={(event) => updateCandidate(candidate.id, "resume_text", event.target.value)}
                         className="w-full rounded-3xl border border-slate-200 bg-white px-4 py-3 outline-none transition focus:border-accent"
                       />
                     </label>
@@ -356,7 +465,7 @@ export default function NewRunPage() {
                       <textarea
                         rows={3}
                         value={candidate.profile_summary}
-                        onChange={(event) => updateCandidate(index, "profile_summary", event.target.value)}
+                        onChange={(event) => updateCandidate(candidate.id, "profile_summary", event.target.value)}
                         className="w-full rounded-3xl border border-slate-200 bg-white px-4 py-3 outline-none transition focus:border-accent"
                       />
                     </label>

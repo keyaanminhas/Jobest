@@ -37,6 +37,30 @@ export async function getHealth() {
   return (await response.json()) as HealthResponse;
 }
 
+export async function parsePdf(file: File) {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const response = await fetch(`${API_BASE_URL}/api/parse-pdf`, {
+    method: "POST",
+    headers: {
+      "X-API-Key": API_KEY,
+    },
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || "Failed to parse PDF resume");
+  }
+
+  return (await response.json()) as { candidate_name: string; resume_text: string };
+}
+
+export async function listHiringRuns() {
+  return request<HiringRunRecord[]>("/api/hiring-runs");
+}
+
 export async function createHiringRun(payload: CreateHiringRunPayload) {
   return request<{ run_id: string; status: string; run: HiringRunRecord }>("/api/hiring-runs", {
     method: "POST",
@@ -68,17 +92,29 @@ export async function getReport(runId: string) {
   );
 }
 
-export async function resolveRun(runId: string): Promise<{ run: HiringRunRecord; source: "api" | "local" | "demo"; offline: boolean }> {
-  const local = getRunLocal(runId);
-  if (local?.results?.candidates?.length) {
-    return { run: local, source: runId === demoRunId ? "demo" : "local", offline: runId === demoRunId };
-  }
+export async function getHiringRun(runId: string) {
+  return request<HiringRunRecord>(`/api/hiring-runs/${runId}`);
+}
 
+export async function resolveRun(runId: string): Promise<{ run: HiringRunRecord; source: "api" | "local" | "demo"; offline: boolean }> {
   if (runId === demoRunId) {
     return { run: demoRun, source: "demo", offline: true };
   }
 
-  throw new Error("Local run not found. Use the live backend flow or load the demo scenario.");
+  try {
+    const live = await getHiringRun(runId);
+    // If the live run has status completed, save it locally for future caching
+    if (live.status === "completed") {
+      saveRunLocal(live);
+    }
+    return { run: live, source: "api", offline: false };
+  } catch {
+    const local = getRunLocal(runId);
+    if (local) {
+      return { run: local, source: "local", offline: true };
+    }
+    throw new Error("Local run not found and backend fetch failed. Use the live backend flow or load the demo scenario.");
+  }
 }
 
 export async function createDemoRun() {
