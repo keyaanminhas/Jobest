@@ -1,0 +1,107 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1080" viewBox="0 0 1800 1080">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f8fbff"/>
+      <stop offset="100%" stop-color="#eef4ff"/>
+    </linearGradient>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M0,0 L12,6 L0,12 z" fill="#1d4ed8"/>
+    </marker>
+    <style>
+      .title { font: 800 46px 'Segoe UI', Arial, sans-serif; fill:#0f172a; }
+      .subtitle { font: 500 20px 'Segoe UI', Arial, sans-serif; fill:#475569; }
+      .box { fill:#ffffff; stroke:#bfdbfe; stroke-width:2.5; rx:20; ry:20; }
+      .step { font: 700 20px 'Segoe UI', Arial, sans-serif; fill:#1e3a8a; }
+      .desc { font: 500 15px 'Segoe UI', Arial, sans-serif; fill:#334155; }
+      .edge { stroke:#1d4ed8; stroke-width:3; fill:none; marker-end:url(#arrow); }
+      .group { font: 700 18px 'Segoe UI', Arial, sans-serif; fill:#1e40af; }
+    </style>
+  </defs>
+
+  <rect width="1800" height="1080" fill="url(#bg)"/>
+  <text x="90" y="95" class="title">Jobest Multi-Agent Framework Diagram</text>
+  <text x="90" y="132" class="subtitle">Decision-support pipeline from job definition to recruiter-ready report</text>
+
+  <text x="110" y="190" class="group">Input + Structuring</text>
+  <text x="700" y="190" class="group">Evidence + Validation</text>
+  <text x="1270" y="190" class="group">Decision + Output</text>
+
+  <rect class="box" x="80" y="220" width="290" height="130"/>
+  <text x="100" y="260" class="step">1. JD Deconstruction</text>
+  <text x="100" y="288" class="desc">Extract must-have, nice-to-have,</text>
+  <text x="100" y="312" class="desc">responsibilities, and risks.</text>
+
+  <rect class="box" x="420" y="220" width="290" height="130"/>
+  <text x="440" y="260" class="step">2. Hiring Context</text>
+  <text x="440" y="288" class="desc">Model team gaps and context-fit</text>
+  <text x="440" y="312" class="desc">signals from recruiter input.</text>
+
+  <rect class="box" x="760" y="220" width="290" height="130"/>
+  <text x="780" y="260" class="step">3. Resume Parsing</text>
+  <text x="780" y="288" class="desc">Structure experience, projects,</text>
+  <text x="780" y="312" class="desc">skills, and professional links.</text>
+
+  <rect class="box" x="1100" y="220" width="290" height="130"/>
+  <text x="1120" y="260" class="step">4. Evidence Extraction</text>
+  <text x="1120" y="288" class="desc">Map claims to supporting evidence</text>
+  <text x="1120" y="312" class="desc">and flag unsupported claims.</text>
+
+  <rect class="box" x="1440" y="220" width="290" height="130"/>
+  <text x="1460" y="260" class="step">5. Skill Transferability</text>
+  <text x="1460" y="288" class="desc">Classify exact, transferable,</text>
+  <text x="1460" y="312" class="desc">and missing requirement matches.</text>
+
+  <rect class="box" x="80" y="420" width="360" height="130"/>
+  <text x="100" y="460" class="step">6. Professional Link Fetcher</text>
+  <text x="100" y="488" class="desc">Visit GitHub + external links,</text>
+  <text x="100" y="512" class="desc">collect repo and front-page evidence.</text>
+
+  <rect class="box" x="500" y="420" width="360" height="130"/>
+  <text x="520" y="460" class="step">7. Professional Footprint</text>
+  <text x="520" y="488" class="desc">Assess claim support, footprint</text>
+  <text x="520" y="512" class="desc">strength, and credibility signals.</text>
+
+  <rect class="box" x="920" y="420" width="360" height="130"/>
+  <text x="940" y="460" class="step">8. Risk &amp; Contradiction</text>
+  <text x="940" y="488" class="desc">Detect weak evidence, mismatch risk,</text>
+  <text x="940" y="512" class="desc">and interview validation focus.</text>
+
+  <rect class="box" x="1340" y="420" width="390" height="130"/>
+  <text x="1360" y="460" class="step">9. Deterministic Score Aggregation</text>
+  <text x="1360" y="488" class="desc">Blend requirement match, evidence,</text>
+  <text x="1360" y="512" class="desc">footprint, context-fit, and penalties.</text>
+
+  <rect class="box" x="220" y="620" width="420" height="130"/>
+  <text x="240" y="660" class="step">10. Hiring Panel Review Agent</text>
+  <text x="240" y="688" class="desc">Generate technical, HR, and manager</text>
+  <text x="240" y="712" class="desc">perspectives for decision confidence.</text>
+
+  <rect class="box" x="710" y="620" width="420" height="130"/>
+  <text x="730" y="660" class="step">11. Interview Pack Generator</text>
+  <text x="730" y="688" class="desc">Create technical and behavioral</text>
+  <text x="730" y="712" class="desc">questions tailored to detected gaps.</text>
+
+  <rect class="box" x="1200" y="620" width="420" height="130"/>
+  <text x="1220" y="660" class="step">12. Final Shortlist Report</text>
+  <text x="1220" y="688" class="desc">Produce ranked recommendation and</text>
+  <text x="1220" y="712" class="desc">actionable recruiter-facing summary.</text>
+
+  <path class="edge" d="M370 285 L420 285"/>
+  <path class="edge" d="M710 285 L760 285"/>
+  <path class="edge" d="M1050 285 L1100 285"/>
+  <path class="edge" d="M1390 285 L1440 285"/>
+
+  <path class="edge" d="M1585 350 C1585 390 1480 390 1480 420"/>
+  <path class="edge" d="M1340 485 L1280 485"/>
+  <path class="edge" d="M920 485 L860 485"/>
+  <path class="edge" d="M500 485 L440 485"/>
+
+  <path class="edge" d="M260 550 C260 590 360 590 360 620"/>
+  <path class="edge" d="M640 685 L710 685"/>
+  <path class="edge" d="M1130 685 L1200 685"/>
+
+  <rect x="90" y="830" width="1620" height="180" rx="18" ry="18" fill="#eff6ff" stroke="#bfdbfe" stroke-width="2"/>
+  <text x="120" y="885" class="step">Outputs persisted to DB</text>
+  <text x="120" y="920" class="desc">candidate_stage_outputs, candidate_final_outputs, score breakdown, panel reviews, interview pack, and recruiter notifications.</text>
+  <text x="120" y="955" class="desc">UI polls live stage status and renders transparent traceability for every hiring decision.</text>
+</svg>
