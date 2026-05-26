@@ -41,11 +41,13 @@ export function AppShell({
   subtitle,
   actions,
   children,
+  noPageHeader,
 }: {
   title: string;
   subtitle: string;
   actions?: React.ReactNode;
   children: React.ReactNode;
+  noPageHeader?: boolean;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -339,20 +341,22 @@ export function AppShell({
           </div>
 
           <div className="px-6 py-6">
-            <div className="rounded-2xl border border-slate-200 bg-white p-6">
-              <div className="mb-6 flex flex-col gap-4 border-b border-slate-100 pb-5 lg:flex-row lg:items-center lg:justify-between">
-                <div>
-                  <div className="mb-2 flex items-center gap-2 text-xs text-slate-500">
-                    <Sparkles className="h-4 w-4 text-accent" />
-                    Multi-agent recruitment intelligence
+            <div className={noPageHeader ? "" : "rounded-2xl border border-slate-200 bg-white p-6"}>
+              {!noPageHeader && (
+                <div className="mb-6 flex flex-col gap-4 border-b border-slate-100 pb-5 lg:flex-row lg:items-center lg:justify-between">
+                  <div>
+                    <div className="mb-2 flex items-center gap-2 text-xs text-slate-500">
+                      <Sparkles className="h-4 w-4 text-accent" />
+                      Multi-agent recruitment intelligence
+                    </div>
+                    <h1 className="font-heading text-[48px] font-extrabold tracking-tight text-slate-950">{title}</h1>
+                    <p className="mt-2 max-w-3xl text-[14px] leading-6 text-slate-600">{subtitle}</p>
                   </div>
-                  <h1 className="font-heading text-[48px] font-extrabold tracking-tight text-slate-950">{title}</h1>
-                  <p className="mt-2 max-w-3xl text-[14px] leading-6 text-slate-600">{subtitle}</p>
+                  <div className="flex items-center gap-3">{actions}</div>
                 </div>
-                <div className="flex items-center gap-3">{actions}</div>
-              </div>
+              )}
               {children}
-              <footer className="mt-8 border-t border-slate-100 pt-4 print:hidden">
+              {!noPageHeader && <footer className="mt-8 border-t border-slate-100 pt-4 print:hidden">
                 <div className="flex flex-col gap-4 text-[12px] text-slate-500 md:flex-row md:items-center md:justify-between">
                   <p className="max-w-2xl leading-6">
                     Decision-support for recruiters using multi-agent evidence review, deterministic scoring, and database-backed workflow state.
@@ -363,7 +367,7 @@ export function AppShell({
                     <span>Mode: Org MVP</span>
                   </div>
                 </div>
-              </footer>
+              </footer>}
             </div>
           </div>
         </main>

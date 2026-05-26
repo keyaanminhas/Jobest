@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState, useTransition } from "react";
+import { Suspense, useEffect, useState, useTransition } from "react";
 import { getChutesAuthUrl, login } from "@/lib/api";
 import { Eye, EyeOff, ArrowRight, CheckCircle2, Sparkles, ShieldCheck } from "lucide-react";
 
@@ -13,7 +13,7 @@ const features = [
   "Real-time queue and progress tracking per candidate",
 ];
 
-export default function LoginPage() {
+function LoginPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [pending, startTransition] = useTransition();
@@ -207,5 +207,13 @@ export default function LoginPage() {
 
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-[#eaeff7]" />}>
+      <LoginPageContent />
+    </Suspense>
   );
 }

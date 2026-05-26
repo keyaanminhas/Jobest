@@ -22,13 +22,6 @@ const pipelineMix = [
   { label: "Completed", color: "bg-emerald-500" },
 ];
 
-function formatMinutes(minutes: number) {
-  if (minutes < 60) return `${Math.round(minutes)} min`;
-  const hours = Math.floor(minutes / 60);
-  const rem = Math.round(minutes % 60);
-  return rem === 0 ? `${hours} hr` : `${hours} hr ${rem} min`;
-}
-
 export default function JobsPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
@@ -140,30 +133,6 @@ export default function JobsPage() {
     }
     return counts;
   }, [candidates]);
-
-  const runtimeSnapshot = useMemo(() => {
-    const completedCount = reports.length;
-    const totalCount = candidates.length;
-    const inFlight = queueStatus.current_status === "processing" ? 1 : 0;
-    const queued = queueStatus.queue_size_total;
-    const completionRate = totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
-    const estimatedAvgMinutes = 17 + Math.min(15, Math.max(0, queued - inFlight) * 2);
-    const waitMinutes = queued === 0 ? 0 : Math.max(8, Math.round((queued - inFlight + 1) * (estimatedAvgMinutes * 0.45)));
-    const reliability = Math.min(99, Math.max(88, Math.round(100 - queued * 1.5 - (inFlight ? 0 : -2))));
-    return {
-      completionRate,
-      estimatedAvgMinutes,
-      waitMinutes,
-      reliability,
-      inFlight,
-    };
-  }, [candidates.length, queueStatus.current_status, queueStatus.queue_size_total, reports.length]);
-
-  const compactTrend = useMemo(() => {
-    const buckets = 8;
-    const base = Math.max(1, Math.round(runtimeSnapshot.completionRate / 12));
-    return Array.from({ length: buckets }, (_, idx) => Math.max(8, Math.min(36, base * 4 + ((idx % 3) - 1) * 5 + idx * 2)));
-  }, [runtimeSnapshot.completionRate]);
 
   if (loading) {
     return <div className="min-h-screen bg-[#f7f9fc]" />;
@@ -279,42 +248,6 @@ export default function JobsPage() {
             accent="amber"
           />
         </div>
-
-        <Panel title="Pipeline Snapshot" subtitle="Compact runtime chart for throughput, latency, and queue health.">
-          <div className="rounded-xl border border-slate-200 bg-white p-3.5">
-            <div className="grid gap-3 md:grid-cols-[1.35fr_1fr_1fr_1fr]">
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">7-Cycle Throughput</div>
-                <div className="flex h-14 items-end gap-1.5">
-                  {compactTrend.map((value, index) => (
-                    <div key={`${value}-${index}`} className="flex h-full flex-1 items-end">
-                      <div className="w-full rounded-sm bg-accent/80" style={{ height: `${value}px` }} />
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">Avg Time</div>
-                <div className="mt-1 font-heading text-2xl font-extrabold text-slate-950">{formatMinutes(runtimeSnapshot.estimatedAvgMinutes)}</div>
-                <div className="text-[11px] text-slate-500">Per candidate</div>
-              </div>
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">Queue Wait</div>
-                <div className="mt-1 font-heading text-2xl font-extrabold text-slate-950">
-                  {queueStatus.queue_size_total > 0 ? formatMinutes(runtimeSnapshot.waitMinutes) : "No wait"}
-                </div>
-                <div className="text-[11px] text-slate-500">Depth {queueStatus.queue_size_total}</div>
-              </div>
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">Reliability</div>
-                <div className="mt-1 font-heading text-2xl font-extrabold text-slate-950">{runtimeSnapshot.reliability}%</div>
-                <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
-                  <div className="h-full rounded-full bg-mint" style={{ width: `${Math.min(100, runtimeSnapshot.completionRate)}%` }} />
-                </div>
-              </div>
-            </div>
-          </div>
-        </Panel>
 
         <div className="grid gap-6 xl:grid-cols-[1.55fr_1fr]">
           <Panel title="Top Candidates / Shortlist" subtitle="Ranked by current score (triage 0-80 before analysis, final 0-100 after completion).">

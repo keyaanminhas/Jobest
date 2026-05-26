@@ -2,9 +2,9 @@
 
 import { setAuthToken } from "@/lib/session";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect } from "react";
+import { Suspense, useEffect } from "react";
 
-export default function ChutesAuthCallbackPage() {
+function ChutesAuthCallbackContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -30,5 +30,13 @@ export default function ChutesAuthCallbackPage() {
         <p className="mt-2 text-sm text-slate-500">Finalizing your Jobest session and redirecting to the dashboard.</p>
       </div>
     </div>
+  );
+}
+
+export default function ChutesAuthCallbackPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-[#eaeff7]" />}>
+      <ChutesAuthCallbackContent />
+    </Suspense>
   );
 }

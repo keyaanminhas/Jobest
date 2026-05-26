@@ -285,6 +285,45 @@ export type CandidateReportResponse = {
   interview_pack: Record<string, unknown>;
 };
 
+export type DeepDiveEvidenceRow = {
+  requirement: string;
+  match_type: "exact" | "transferable" | "missing" | "unclassified";
+  evidence: string;
+  confidence_label: string;
+  confidence_score: number;
+};
+
+export type DeepDiveMatchBuckets = {
+  exact: Array<{ requirement: string; detail: string }>;
+  transferable: Array<{ requirement: string; detail: string }>;
+  missing: Array<{ requirement: string; detail: string }>;
+};
+
+export type DeepDivePanelSummary = {
+  technical_lead_view: string;
+  hr_recruiter_view: string;
+  hiring_manager_view: string;
+  risk_auditor_view: string;
+  final_panel_recommendation: string;
+};
+
+export type CandidateReportViewModel = {
+  candidate_id: string;
+  candidate_name: string;
+  job_posting_title: string;
+  final_score: number;
+  recommendation: string;
+  candidate_summary: string;
+  why_this_candidate: string;
+  risk_flags: string[];
+  interview_focus: string[];
+  evidence_rows: DeepDiveEvidenceRow[];
+  matches: DeepDiveMatchBuckets;
+  professional_footprint_summary: string;
+  professional_links: Record<string, string>;
+  panel: DeepDivePanelSummary;
+};
+
 export type CandidateReportListItem = {
   candidate_id: string;
   candidate_name: string;
