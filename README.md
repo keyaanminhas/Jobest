@@ -279,6 +279,13 @@ CHUTES_OAUTH_SCOPES=profile:read
 
 If these are not configured, local email/password authentication still works.
 
+## Submission Artifacts
+
+- Pitch deck: [Jobest_Pitch_Deck_C0nc3pt_Squad.pptx](./docs/submission/Jobest_Pitch_Deck_C0nc3pt_Squad.pptx)
+- Video demo: [Jobest_demo.mp4](./docs/submission/Jobest_demo.mp4)
+- Agent framework diagram (source): [agent-framework-diagram.svg](./docs/submission/agent-framework-diagram.svg)
+- Agent framework diagram (screenshot): [agent-framework-diagram.png](./docs/submission/agent-framework-diagram.png)
+
 ## Scoring Model
 
 Jobest uses two layers:
