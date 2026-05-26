@@ -389,6 +389,84 @@ export default function CandidateReportPage() {
                     No external links submitted.
                   </div>
                 )}
+
+                <div className="mt-4 rounded-xl border border-slate-200 bg-white">
+                  <div className="border-b border-slate-100 px-4 py-3 text-[12px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                    Fetched Link Activity
+                  </div>
+                  <div className="divide-y divide-slate-100">
+                    {view.professional_visited_links.length > 0 ? (
+                      view.professional_visited_links.map((item) => (
+                        <div key={`${item.link_type}-${item.original_url}`} className="px-4 py-3">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="text-[13px] font-semibold text-slate-900">{item.link_type}</div>
+                            <span
+                              className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                                item.status === "visited"
+                                  ? "bg-emerald-50 text-emerald-700"
+                                  : item.status === "skipped"
+                                    ? "bg-slate-100 text-slate-700"
+                                    : "bg-red-50 text-red-700"
+                              }`}
+                            >
+                              {item.status}
+                            </span>
+                          </div>
+                          <div className="mt-1 text-[12px] text-slate-500">{item.original_url}</div>
+                          <div className="mt-1 text-[12px] text-slate-600">{item.summary}</div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="px-4 py-3 text-[13px] text-slate-500">No fetch activity recorded.</div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="mt-4 rounded-xl border border-slate-200 bg-white">
+                  <div className="border-b border-slate-100 px-4 py-3 text-[12px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                    GitHub Repositories
+                  </div>
+                  <div className="divide-y divide-slate-100">
+                    {view.professional_github_repos.length > 0 ? (
+                      view.professional_github_repos.map((repo) => (
+                        <div key={`${repo.name}-${repo.url}`} className="px-4 py-3">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <div className="text-[13px] font-semibold text-slate-900">{repo.name}</div>
+                            <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-accent">
+                              Stars {repo.stars}
+                            </span>
+                            {repo.language ? (
+                              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700">
+                                {repo.language}
+                              </span>
+                            ) : null}
+                          </div>
+                          {repo.description ? <div className="mt-1 text-[12px] text-slate-600">{repo.description}</div> : null}
+                          {repo.url ? (
+                            <a href={repo.url} target="_blank" rel="noreferrer" className="mt-1 block text-[12px] font-semibold text-accent hover:underline">
+                              {repo.url}
+                            </a>
+                          ) : null}
+                        </div>
+                      ))
+                    ) : (
+                      <div className="px-4 py-3 text-[13px] text-slate-500">No GitHub repositories extracted.</div>
+                    )}
+                  </div>
+                </div>
+
+                {view.professional_fetch_failures.length > 0 ? (
+                  <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3">
+                    <div className="text-[12px] font-semibold uppercase tracking-[0.14em] text-red-700">Fetch Failures</div>
+                    <div className="mt-2 space-y-1">
+                      {view.professional_fetch_failures.map((failure) => (
+                        <div key={`${failure.link_type}-${failure.url}`} className="text-[12px] text-red-700">
+                          {failure.link_type}: {failure.reason}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
               </Panel>
             </div>
 
@@ -572,6 +650,9 @@ function buildViewModel(
     ...questionList(interviewData.behavioral_questions),
     ...questionList(interviewData.risk_validation_questions),
   ];
+  const visitedLinks = normalizeVisitedLinks(artifacts.footprint.visited_links);
+  const githubRepos = normalizeGithubRepos(artifacts.footprint.github_repos);
+  const fetchFailures = normalizeFetchFailures(artifacts.footprint.fetch_failures);
 
   const panel: DeepDivePanelSummary = {
     technical_lead_view: asString(panelData.technical_lead_view),
@@ -581,10 +662,13 @@ function buildViewModel(
     final_panel_recommendation: asString(panelData.final_panel_recommendation),
   };
 
+  const claimSupport = asString(artifacts.footprint.claim_support);
+  const professionalEvidenceText = asStringList(artifacts.footprint.professional_evidence).join(" ");
   const professionalFootprintSummary =
-    asString(artifacts.footprint.claim_support) ||
-    asStringList(artifacts.footprint.professional_evidence).join(" ") ||
-    "No substantial external professional footprint was provided. Treated as neutral, not negative.";
+    [claimSupport ? `Claim support: ${claimSupport}.` : "", professionalEvidenceText]
+      .filter((item) => item.length > 0)
+      .join(" ")
+      .trim() || "No substantial external professional footprint was provided. Treated as neutral, not negative.";
 
   return {
     candidate_id: candidate.id,
@@ -606,6 +690,9 @@ function buildViewModel(
     matches,
     professional_footprint_summary: professionalFootprintSummary,
     professional_links: candidate.links ?? {},
+    professional_visited_links: visitedLinks,
+    professional_github_repos: githubRepos,
+    professional_fetch_failures: fetchFailures,
     panel,
   };
 }
@@ -623,6 +710,62 @@ function normalizeMatchBuckets(transferable: Record<string, unknown>): DeepDiveM
   const trans = toMatchItems(transferable.transferable_matches);
   const missing = toMissingItems(transferable.missing_requirements);
   return { exact, transferable: trans, missing };
+}
+
+function normalizeVisitedLinks(value: unknown): Array<{
+  link_type: string;
+  original_url: string;
+  final_url: string;
+  status: string;
+  http_status: number | null;
+  summary: string;
+}> {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => asRecord(item))
+    .map((row) => ({
+      link_type: asString(row.link_type) || "unknown",
+      original_url: asString(row.original_url),
+      final_url: asString(row.final_url) || asString(row.original_url),
+      status: asString(row.status) || "unknown",
+      http_status: typeof row.http_status === "number" ? row.http_status : null,
+      summary: asString(row.summary) || "No summary provided.",
+    }))
+    .filter((row) => row.original_url.length > 0)
+    .sort((a, b) => a.link_type.localeCompare(b.link_type));
+}
+
+function normalizeGithubRepos(value: unknown): Array<{
+  name: string;
+  description: string;
+  language: string;
+  stars: number;
+  url: string;
+}> {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => asRecord(item))
+    .map((row) => ({
+      name: asString(row.name),
+      description: asString(row.description),
+      language: asString(row.language),
+      stars: asNumber(row.stars, 0),
+      url: asString(row.url),
+    }))
+    .filter((row) => row.name.length > 0)
+    .sort((a, b) => b.stars - a.stars || a.name.localeCompare(b.name));
+}
+
+function normalizeFetchFailures(value: unknown): Array<{ link_type: string; url: string; reason: string }> {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => asRecord(item))
+    .map((row) => ({
+      link_type: asString(row.link_type) || "unknown",
+      url: asString(row.url),
+      reason: asString(row.reason) || "Fetch failed.",
+    }))
+    .filter((row) => row.url.length > 0);
 }
 
 function toMatchItems(value: unknown): Array<{ requirement: string; detail: string }> {

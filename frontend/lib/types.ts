@@ -97,6 +97,26 @@ export type CandidateRecord = {
     concerns?: string[];
     supported_resume_claims?: string[];
     unsupported_resume_claims?: string[];
+    visited_links?: Array<{
+      link_type: string;
+      original_url: string;
+      final_url?: string;
+      status?: string;
+      http_status?: number | null;
+      summary?: string;
+    }>;
+    github_repos?: Array<{
+      name: string;
+      description?: string;
+      language?: string;
+      stars?: number;
+      url?: string;
+    }>;
+    fetch_failures?: Array<{
+      link_type: string;
+      url: string;
+      reason: string;
+    }>;
   };
   risk_audit?: {
     risk_level?: string;
@@ -321,6 +341,26 @@ export type CandidateReportViewModel = {
   matches: DeepDiveMatchBuckets;
   professional_footprint_summary: string;
   professional_links: Record<string, string>;
+  professional_visited_links: Array<{
+    link_type: string;
+    original_url: string;
+    final_url: string;
+    status: string;
+    http_status: number | null;
+    summary: string;
+  }>;
+  professional_github_repos: Array<{
+    name: string;
+    description: string;
+    language: string;
+    stars: number;
+    url: string;
+  }>;
+  professional_fetch_failures: Array<{
+    link_type: string;
+    url: string;
+    reason: string;
+  }>;
   panel: DeepDivePanelSummary;
 };
 

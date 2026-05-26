@@ -125,6 +125,38 @@ class ProfessionalFootprintOutput(BaseModel):
     concerns: list[str] = Field(default_factory=list)
     supported_resume_claims: list[str] = Field(default_factory=list)
     unsupported_resume_claims: list[str] = Field(default_factory=list)
+    visited_links: list[dict[str, Any]] = Field(default_factory=list)
+    github_repos: list[dict[str, Any]] = Field(default_factory=list)
+    fetch_failures: list[dict[str, str]] = Field(default_factory=list)
+
+    @field_validator("professional_evidence", mode="before")
+    @classmethod
+    def _normalize_professional_evidence(cls, value: Any) -> list[str]:
+        if not isinstance(value, list):
+            return []
+        normalized: list[str] = []
+        for item in value:
+            if isinstance(item, str):
+                text = item.strip()
+                if text:
+                    normalized.append(text)
+                continue
+            if isinstance(item, dict):
+                skill = str(item.get("skill") or "").strip()
+                evidence = str(item.get("evidence") or item.get("details") or "").strip()
+                confidence = str(item.get("confidence") or "").strip()
+                composed = ""
+                if skill and evidence:
+                    composed = f"{skill}: {evidence}"
+                elif skill:
+                    composed = skill
+                elif evidence:
+                    composed = evidence
+                if composed and confidence:
+                    composed = f"{composed} ({confidence})"
+                if composed:
+                    normalized.append(composed)
+        return normalized
 
 
 class RiskAuditOutput(BaseModel):

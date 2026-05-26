@@ -72,6 +72,7 @@ _PROGRESS_STAGE_KEYS = [
     "Resume Parsing Agent",
     "Candidate Evidence Agent",
     "Transferable Skill Agent",
+    "Professional Link Fetcher Agent",
     "Professional Footprint Agent",
     "Risk & Contradiction Agent",
     "Score Aggregation Engine",
@@ -255,25 +256,58 @@ def _progress_from_stage_rows(stage_rows: list[CandidateStageOutput]) -> tuple[f
     return round(percent, 2), latest_stage
 
 
+def _normalize_candidate_link(token: str) -> str | None:
+    cleaned = token.strip().strip(".,;)")
+    if not cleaned:
+        return None
+    parsed = urlparse(cleaned)
+    if parsed.scheme in {"http", "https"} and parsed.netloc:
+        return cleaned
+    if "://" in cleaned:
+        return None
+    if " " in cleaned or "@" in cleaned:
+        return None
+    if "." not in cleaned:
+        return None
+    return f"https://{cleaned}"
+
+
 def _extract_professional_links(raw_urls: str | None) -> dict[str, str]:
     if not raw_urls:
         return {}
     tokens = [token.strip() for token in re.split(r"[\n,; ]+", raw_urls) if token.strip()]
     links: dict[str, str] = {}
+    seen_urls: set[str] = set()
+
+    def _insert_link(link_type: str, url: str) -> None:
+        normalized_url = url.strip()
+        if not normalized_url or normalized_url in seen_urls:
+            return
+        seen_urls.add(normalized_url)
+        key = link_type
+        suffix = 2
+        while key in links:
+            key = f"{link_type}_{suffix}"
+            suffix += 1
+        links[key] = normalized_url
+
     for token in tokens:
-        if not token.lower().startswith(("http://", "https://")):
+        normalized = _normalize_candidate_link(token)
+        if not normalized:
             continue
-        host = urlparse(token).netloc.lower()
-        if "github.com" in host and "github" not in links:
-            links["github"] = token
-        elif any(domain in host for domain in ("linkedin.com", "lnkd.in")) and "linkedin" not in links:
-            links["linkedin"] = token
-        elif "kaggle.com" in host and "kaggle" not in links:
-            links["kaggle"] = token
-        elif "scholar.google." in host and "scholar" not in links:
-            links["scholar"] = token
-        elif "portfolio" not in links:
-            links["portfolio"] = token
+        host = urlparse(normalized).netloc.lower()
+        if "github.com" in host:
+            _insert_link("github", normalized)
+        elif any(domain in host for domain in ("linkedin.com", "lnkd.in")):
+            _insert_link("linkedin", normalized)
+        elif "kaggle.com" in host:
+            _insert_link("kaggle", normalized)
+        elif "scholar.google." in host:
+            _insert_link("scholar", normalized)
+        elif any(domain in host for domain in ("dribbble.com", "behance.net", "medium.com", "notion.site")):
+            _insert_link("portfolio", normalized)
+        else:
+            _insert_link("external", normalized)
     return links
 
 
@@ -284,6 +318,20 @@ def _extract_links_for_file(
     additional_urls_by_filename: str | None,
 ) -> dict[str, str]:
     links = _extract_professional_links(additional_urls)
+
+    def _merge_links(source: dict[str, str]) -> None:
+        existing_values = set(links.values())
+        for key, value in source.items():
+            if value in existing_values:
+                continue
+            candidate_key = key
+            suffix = 2
+            while candidate_key in links:
+                candidate_key = f"{key}_{suffix}"
+                suffix += 1
+            links[candidate_key] = value
+            existing_values.add(value)
+
     if not additional_urls_by_filename:
         return links
     try:
@@ -294,7 +342,18 @@ def _extract_links_for_file(
         return links
     value = mapping.get(filename)
     if isinstance(value, str):
-        links.update(_extract_professional_links(value))
+        _merge_links(_extract_professional_links(value))
+    return links
+
+
+def _candidate_links_map(links_rows: list[CandidateLink]) -> dict[str, str]:
+    links: dict[str, str] = {}
+    link_type_counts: dict[str, int] = {}
+    for row in links_rows:
+        count = link_type_counts.get(row.link_type, 0) + 1
+        link_type_counts[row.link_type] = count
+        key = row.link_type if count == 1 else f"{row.link_type}_{count}"
+        links[key] = row.url
     return links
 
 
@@ -945,7 +1004,7 @@ async def _run_candidate_analysis_background(candidate_id: str, analysis_run_id:
 
         must_have = [item.skill_name for item in posting.skills if item.skill_type == "must_have"]
         nice_to_have = [item.skill_name for item in posting.skills if item.skill_type == "nice_to_have"]
-        links = {item.link_type: item.url for item in candidate.links}
+        links = _candidate_links_map(candidate.links)
 
         run_data = {
             "id": analysis_run_id,
@@ -1109,7 +1168,7 @@ async def get_candidate_detail(
     current_user: User = Depends(get_current_user),
 ) -> CandidateDetailResponse:
     candidate = await _get_owned_candidate_or_404(db, current_user.id, candidate_id)
-    links = {item.link_type: item.url for item in candidate.links}
+    links = _candidate_links_map(candidate.links)
     triage = candidate.triage
     current_score, current_score_type, final_score, recommendation, report_ready = _candidate_score_snapshot(candidate)
     return CandidateDetailResponse(

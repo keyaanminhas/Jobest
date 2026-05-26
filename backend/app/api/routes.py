@@ -58,26 +58,59 @@ def _load_run(run_id: str) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def _normalize_candidate_link(token: str) -> str | None:
+    cleaned = token.strip().strip(".,;)")
+    if not cleaned:
+        return None
+    parsed = urlparse(cleaned)
+    if parsed.scheme in {"http", "https"} and parsed.netloc:
+        return cleaned
+    if "://" in cleaned:
+        return None
+    if " " in cleaned or "@" in cleaned:
+        return None
+    if "." not in cleaned:
+        return None
+    return f"https://{cleaned}"
+
+
 def _extract_professional_links(raw_urls: str | None) -> dict[str, str]:
     if not raw_urls:
         return {}
 
     tokens = [token.strip() for token in re.split(r"[\n,; ]+", raw_urls) if token.strip()]
     links: dict[str, str] = {}
+    seen_urls: set[str] = set()
+
+    def _insert_link(link_type: str, url: str) -> None:
+        normalized_url = url.strip()
+        if not normalized_url or normalized_url in seen_urls:
+            return
+        seen_urls.add(normalized_url)
+        key = link_type
+        suffix = 2
+        while key in links:
+            key = f"{link_type}_{suffix}"
+            suffix += 1
+        links[key] = normalized_url
+
     for token in tokens:
-        if token.lower().startswith(("http://", "https://")):
-            parsed = urlparse(token)
-            host = parsed.netloc.lower()
-            if "github.com" in host and "github" not in links:
-                links["github"] = token
-            elif any(domain in host for domain in ("linkedin.com", "lnkd.in")) and "linkedin" not in links:
-                links["linkedin"] = token
-            elif "kaggle.com" in host and "kaggle" not in links:
-                links["kaggle"] = token
-            elif "scholar.google." in host and "scholar" not in links:
-                links["scholar"] = token
-            elif "portfolio" not in links:
-                links["portfolio"] = token
+        normalized = _normalize_candidate_link(token)
+        if not normalized:
+            continue
+        host = urlparse(normalized).netloc.lower()
+        if "github.com" in host:
+            _insert_link("github", normalized)
+        elif any(domain in host for domain in ("linkedin.com", "lnkd.in")):
+            _insert_link("linkedin", normalized)
+        elif "kaggle.com" in host:
+            _insert_link("kaggle", normalized)
+        elif "scholar.google." in host:
+            _insert_link("scholar", normalized)
+        elif any(domain in host for domain in ("dribbble.com", "behance.net", "medium.com", "notion.site")):
+            _insert_link("portfolio", normalized)
+        else:
+            _insert_link("external", normalized)
     return links
 
 

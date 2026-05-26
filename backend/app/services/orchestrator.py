@@ -19,6 +19,7 @@ from app.schemas.agent_outputs import (
 )
 from app.schemas.candidate import CandidateScore
 from app.services.llm_client import LLMClient
+from app.services.professional_link_fetcher import fetch_professional_profiles
 from app.services.scoring_service import calculate_score
 
 
@@ -206,12 +207,31 @@ class PipelineOrchestrator:
                     candidates_out=candidates_out,
                 )
 
+                fetched_profiles = await fetch_professional_profiles(links)
+                visited_links = fetched_profiles.get("visited_links", [])
+                fetch_failures = fetched_profiles.get("fetch_failures", [])
+                fetch_summary = (
+                    f"Visited {len(visited_links)} professional links, "
+                    f"failures={len(fetch_failures)}"
+                )
+                pipeline.append(
+                    self._stage_entry(
+                        f"Professional Link Fetcher Agent ({candidate_name})",
+                        "completed",
+                        fetch_summary,
+                        fetched_profiles,
+                    )
+                )
+                await emit_progress()
+
+                footprint_stage_name = f"Professional Footprint Agent ({candidate_name})"
                 footprint = await self._run_agent(
                     agent_name="professional_footprint",
-                    stage_name=f"Professional Footprint Agent ({candidate_name})",
+                    stage_name=footprint_stage_name,
                     schema_cls=ProfessionalFootprintOutput,
                     payload={
                         "profile_links": links,
+                        "fetched_profiles": fetched_profiles,
                         "candidate_evidence": evidence.model_dump(),
                         "job_rubric": rubric.model_dump(),
                     },
@@ -219,6 +239,19 @@ class PipelineOrchestrator:
                     progress_callback=progress_callback,
                     candidates_out=candidates_out,
                 )
+                footprint = footprint.model_copy(
+                    update={
+                        "visited_links": fetched_profiles.get("visited_links", []),
+                        "github_repos": fetched_profiles.get("github_repos", []),
+                        "fetch_failures": fetched_profiles.get("fetch_failures", []),
+                    }
+                )
+                for index in range(len(pipeline) - 1, -1, -1):
+                    stage = pipeline[index]
+                    if stage.get("stage") == footprint_stage_name and str(stage.get("status", "")).startswith("completed"):
+                        stage["raw_output"] = footprint.model_dump()
+                        break
+                await emit_progress()
 
                 risk = await self._run_agent(
                     agent_name="risk_auditor",

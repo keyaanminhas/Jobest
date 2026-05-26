@@ -167,8 +167,8 @@ def calculate_score(
 
     final_score = (
         requirement_match * 0.35
-        + evidence_strength * 0.25
-        + professional_footprint * 0.20
+        + evidence_strength * 0.35
+        + professional_footprint * 0.10
         + hiring_context_fit * 0.15
         - risk_penalty
     )
