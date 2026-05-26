@@ -55,7 +55,13 @@ from app.security import create_access_token, hash_password, verify_password
 from app.services.analysis_queue import analysis_queue_manager
 from app.services.llm_client import LLMClient
 from app.services.orchestrator import PipelineOrchestrator
-from app.services.resume_ingestion import ResumeIngestionError, assert_pdf_upload, derive_candidate_name, extract_pdf_text
+from app.services.resume_ingestion import (
+    ResumeIngestionError,
+    assert_pdf_upload,
+    derive_candidate_name,
+    extract_pdf_text,
+    extract_professional_urls_from_pdf,
+)
 from app.services.triage_service import score_candidate_triage
 
 router = APIRouter(prefix="/api", tags=["org"])
@@ -80,6 +86,21 @@ _PROGRESS_STAGE_KEYS = [
     "Interview Pack Generator Agent",
     "Final Shortlist Report Agent",
 ]
+IGNORED_LINK_HOSTS: set[str] = {
+    "gmail.com",
+    "googlemail.com",
+    "mail.google.com",
+    "yahoo.com",
+    "outlook.com",
+    "hotmail.com",
+    "live.com",
+    "icloud.com",
+    "proton.me",
+    "protonmail.com",
+    "aol.com",
+    "gmx.com",
+    "yandex.com",
+}
 
 
 def _required_env(name: str) -> str:
@@ -272,6 +293,13 @@ def _normalize_candidate_link(token: str) -> str | None:
     return f"https://{cleaned}"
 
 
+def _is_ignored_link_host(url: str) -> bool:
+    host = (urlparse(url).hostname or "").lower()
+    if not host:
+        return True
+    return host in IGNORED_LINK_HOSTS or any(host.endswith(f".{domain}") for domain in IGNORED_LINK_HOSTS)
+
+
 def _extract_professional_links(raw_urls: str | None) -> dict[str, str]:
     if not raw_urls:
         return {}
@@ -294,6 +322,8 @@ def _extract_professional_links(raw_urls: str | None) -> dict[str, str]:
     for token in tokens:
         normalized = _normalize_candidate_link(token)
         if not normalized:
+            continue
+        if _is_ignored_link_host(normalized):
             continue
         host = urlparse(normalized).netloc.lower()
         if "github.com" in host:
@@ -344,6 +374,22 @@ def _extract_links_for_file(
     if isinstance(value, str):
         _merge_links(_extract_professional_links(value))
     return links
+
+
+def _merge_link_maps(base: dict[str, str], incoming: dict[str, str]) -> dict[str, str]:
+    merged = dict(base)
+    existing_values = set(merged.values())
+    for key, value in incoming.items():
+        if value in existing_values:
+            continue
+        candidate_key = key
+        suffix = 2
+        while candidate_key in merged:
+            candidate_key = f"{key}_{suffix}"
+            suffix += 1
+        merged[candidate_key] = value
+        existing_values.add(value)
+    return merged
 
 
 def _candidate_links_map(links_rows: list[CandidateLink]) -> dict[str, str]:
@@ -703,6 +749,10 @@ async def upload_candidates(
             additional_urls=additional_urls,
             additional_urls_by_filename=additional_urls_by_filename,
         )
+        extracted_urls = extract_professional_urls_from_pdf(file_bytes)
+        if extracted_urls:
+            extracted_map = _extract_professional_links(" ".join(extracted_urls))
+            links_map = _merge_link_maps(links_map, extracted_map)
         for link_type, url in links_map.items():
             db.add(CandidateLink(candidate_id=candidate.id, link_type=link_type, url=url))
 
@@ -1023,25 +1073,51 @@ async def _run_candidate_analysis_background(candidate_id: str, analysis_run_id:
             ],
         }
 
-        stage_count = 0
+        stage_snapshots: dict[str, str] = {}
 
         async def progress_callback(pipeline: list[dict], _: list[dict]) -> None:
-            nonlocal stage_count
-            if len(pipeline) <= stage_count:
-                return
-            new_entries = pipeline[stage_count:]
-            stage_count = len(pipeline)
-
-            for item in new_entries:
-                db.add(
-                    CandidateStageOutput(
-                        analysis_run_id=analysis_run_id,
-                        stage_name=item.get("stage", ""),
-                        status=item.get("status", "completed"),
-                        summary=item.get("summary", ""),
-                        raw_output_json=item.get("raw_output", {}),
-                    )
+            for item in pipeline:
+                stage_name = item.get("stage", "")
+                status = item.get("status", "completed")
+                summary = item.get("summary", "")
+                raw_output = item.get("raw_output", {})
+                snapshot = json.dumps(
+                    {
+                        "status": status,
+                        "summary": summary,
+                        "raw_output": raw_output,
+                    },
+                    ensure_ascii=True,
+                    sort_keys=True,
                 )
+                if stage_snapshots.get(stage_name) == snapshot:
+                    continue
+
+                existing = await db.scalar(
+                    select(CandidateStageOutput)
+                    .where(
+                        CandidateStageOutput.analysis_run_id == analysis_run_id,
+                        CandidateStageOutput.stage_name == stage_name,
+                    )
+                    .order_by(CandidateStageOutput.created_at.desc(), CandidateStageOutput.id.desc())
+                )
+
+                if existing is None:
+                    db.add(
+                        CandidateStageOutput(
+                            analysis_run_id=analysis_run_id,
+                            stage_name=stage_name,
+                            status=status,
+                            summary=summary,
+                            raw_output_json=raw_output,
+                        )
+                    )
+                else:
+                    existing.status = status
+                    existing.summary = summary
+                    existing.raw_output_json = raw_output
+
+                stage_snapshots[stage_name] = snapshot
             await db.commit()
 
         try:

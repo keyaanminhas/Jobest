@@ -22,6 +22,7 @@ from app.services.resume_ingestion import (
     assert_pdf_upload,
     derive_candidate_name,
     extract_pdf_text,
+    extract_professional_urls_from_pdf,
 )
 from app.services.seeded_role import FIRST_RUN_PRESET
 
@@ -41,6 +42,22 @@ async def require_api_key(x_api_key: str | None = Header(default=None, alias="X-
 
 
 orchestrator = PipelineOrchestrator()
+
+IGNORED_LINK_HOSTS: set[str] = {
+    "gmail.com",
+    "googlemail.com",
+    "mail.google.com",
+    "yahoo.com",
+    "outlook.com",
+    "hotmail.com",
+    "live.com",
+    "icloud.com",
+    "proton.me",
+    "protonmail.com",
+    "aol.com",
+    "gmx.com",
+    "yandex.com",
+}
 
 
 def _run_path(run_id: str) -> Path:
@@ -74,6 +91,13 @@ def _normalize_candidate_link(token: str) -> str | None:
     return f"https://{cleaned}"
 
 
+def _is_ignored_link_host(url: str) -> bool:
+    host = (urlparse(url).hostname or "").lower()
+    if not host:
+        return True
+    return host in IGNORED_LINK_HOSTS or any(host.endswith(f".{domain}") for domain in IGNORED_LINK_HOSTS)
+
+
 def _extract_professional_links(raw_urls: str | None) -> dict[str, str]:
     if not raw_urls:
         return {}
@@ -98,6 +122,8 @@ def _extract_professional_links(raw_urls: str | None) -> dict[str, str]:
         normalized = _normalize_candidate_link(token)
         if not normalized:
             continue
+        if _is_ignored_link_host(normalized):
+            continue
         host = urlparse(normalized).netloc.lower()
         if "github.com" in host:
             _insert_link("github", normalized)
@@ -112,6 +138,22 @@ def _extract_professional_links(raw_urls: str | None) -> dict[str, str]:
         else:
             _insert_link("external", normalized)
     return links
+
+
+def _merge_link_maps(base: dict[str, str], incoming: dict[str, str]) -> dict[str, str]:
+    merged = dict(base)
+    existing_values = set(merged.values())
+    for key, value in incoming.items():
+        if value in existing_values:
+            continue
+        candidate_key = key
+        suffix = 2
+        while candidate_key in merged:
+            candidate_key = f"{key}_{suffix}"
+            suffix += 1
+        merged[candidate_key] = value
+        existing_values.add(value)
+    return merged
 
 
 def _run_execution_from_results(run_id: str, results: dict, status: str) -> RunExecutionResponse:
@@ -236,6 +278,10 @@ async def run_single_cv(
         name_override=candidate_name_override,
     )
     professional_links = _extract_professional_links(additional_urls)
+    extracted_urls = extract_professional_urls_from_pdf(file_bytes)
+    if extracted_urls:
+        extracted_map = _extract_professional_links(" ".join(extracted_urls))
+        professional_links = _merge_link_maps(professional_links, extracted_map)
 
     preset = FIRST_RUN_PRESET
     run = HiringRun(

@@ -2,6 +2,7 @@ import json
 import copy
 from pathlib import Path
 from typing import Any, Awaitable, Callable
+from urllib.parse import urlparse
 
 from pydantic import ValidationError
 
@@ -21,6 +22,48 @@ from app.schemas.candidate import CandidateScore
 from app.services.llm_client import LLMClient
 from app.services.professional_link_fetcher import fetch_professional_profiles
 from app.services.scoring_service import calculate_score
+
+
+def _classify_link_type(raw_url: str) -> str:
+    value = str(raw_url or "").strip().lower()
+    host = (urlparse(value).hostname or "").lower() if value else ""
+    target = host or value
+    if "github.com" in target:
+        return "github"
+    if "linkedin.com" in target or "lnkd.in" in target:
+        return "linkedin"
+    if "kaggle.com" in target:
+        return "kaggle"
+    if "scholar.google." in target:
+        return "scholar"
+    if any(domain in target for domain in ("dribbble.com", "behance.net", "medium.com", "notion.site")):
+        return "portfolio"
+    return "external"
+
+
+def _merge_profile_links(explicit_links: dict[str, str], inferred_links: list[str]) -> dict[str, str]:
+    merged: dict[str, str] = {}
+    seen_values: set[str] = set()
+    for key, value in (explicit_links or {}).items():
+        normalized = str(value or "").strip()
+        if not normalized or normalized in seen_values:
+            continue
+        merged[str(key)] = normalized
+        seen_values.add(normalized)
+
+    for raw in inferred_links or []:
+        normalized = str(raw or "").strip()
+        if not normalized or normalized in seen_values:
+            continue
+        base = _classify_link_type(normalized)
+        key = base
+        suffix = 2
+        while key in merged:
+            key = f"{base}_{suffix}"
+            suffix += 1
+        merged[key] = normalized
+        seen_values.add(normalized)
+    return merged
 
 
 class PipelineOrchestrator:
@@ -194,6 +237,8 @@ class PipelineOrchestrator:
                     candidates_out=candidates_out,
                 )
 
+                effective_links = _merge_profile_links(links, parsed.professional_links)
+
                 transfer = await self._run_agent(
                     agent_name="transferable_skills",
                     stage_name=f"Transferable Skill Agent ({candidate_name})",
@@ -207,7 +252,7 @@ class PipelineOrchestrator:
                     candidates_out=candidates_out,
                 )
 
-                fetched_profiles = await fetch_professional_profiles(links)
+                fetched_profiles = await fetch_professional_profiles(effective_links)
                 visited_links = fetched_profiles.get("visited_links", [])
                 fetch_failures = fetched_profiles.get("fetch_failures", [])
                 fetch_summary = (
@@ -230,7 +275,7 @@ class PipelineOrchestrator:
                     stage_name=footprint_stage_name,
                     schema_cls=ProfessionalFootprintOutput,
                     payload={
-                        "profile_links": links,
+                        "profile_links": effective_links,
                         "fetched_profiles": fetched_profiles,
                         "candidate_evidence": evidence.model_dump(),
                         "job_rubric": rubric.model_dump(),

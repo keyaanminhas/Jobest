@@ -70,10 +70,10 @@ def _evidence_strength_score(evidence: EvidenceOutput) -> tuple[float, str]:
         avg_conf = sum(_confidence_score(item.confidence) for item in evidence.evidence_items) / len(evidence.evidence_items)
         base = avg_conf * 100
     else:
-        base = 35.0
+        base = 45.0
 
     breadth_bonus = min(len(evidence.evidence_items) * 1.5, 12.0)
-    unsupported_penalty = min(len(evidence.unsupported_claims) * 6.0, 30.0)
+    unsupported_penalty = min(len(evidence.unsupported_claims) * 2.0, 10.0)
 
     score = _clamp(base + breadth_bonus - unsupported_penalty, 0.0, 100.0)
     score = round(score, 2)
@@ -86,33 +86,41 @@ def _evidence_strength_score(evidence: EvidenceOutput) -> tuple[float, str]:
 
 
 def _professional_footprint_score(footprint: ProfessionalFootprintOutput) -> tuple[float, str]:
+    neutral_baseline = 60.0
     has_explicit_evidence = bool(footprint.professional_evidence)
     claim_support = (footprint.claim_support or "").strip().lower()
 
     if not has_explicit_evidence and claim_support in {"", "unknown", "unavailable", "not_provided", "none"}:
-        return 50.0, "No professional links/evidence provided; neutral footprint score applied"
+        return neutral_baseline, "No professional links/evidence provided; neutral footprint score applied"
 
     base = (float(footprint.portfolio_score) + float(footprint.github_score)) / 2.0
 
-    support_adjust = 0.0
+    support_bonus = 0.0
     if claim_support in {"strong", "high"}:
-        support_adjust = 8.0
+        support_bonus = 7.0
     elif claim_support in {"moderate", "medium"}:
-        support_adjust = 3.0
+        support_bonus = 4.0
     elif claim_support in {"weak", "low"}:
-        support_adjust = -8.0
+        support_bonus = 1.0
+    elif claim_support in {"partial"}:
+        support_bonus = 2.0
 
-    supported_bonus = min(len(footprint.supported_resume_claims) * 1.5, 8.0)
-    unsupported_penalty = min(len(footprint.unsupported_resume_claims) * 4.0, 20.0)
-    concerns_penalty = min(len(footprint.concerns) * 2.0, 10.0)
+    supported_bonus = min(len(footprint.supported_resume_claims) * 1.5, 10.0)
+    link_bonus = min(
+        sum(1 for item in footprint.visited_links if str(item.get("status") or "").lower() == "visited") * 0.6,
+        5.0,
+    )
+    repo_bonus = min(len(footprint.github_repos) * 0.3, 4.0)
 
-    score = _clamp(base + support_adjust + supported_bonus - unsupported_penalty - concerns_penalty, 0.0, 100.0)
+    raw_score = base + support_bonus + supported_bonus + link_bonus + repo_bonus
+    # Professional links should only help. Never let footprint go below neutral baseline.
+    score = _clamp(max(neutral_baseline, raw_score), neutral_baseline, 100.0)
     score = round(score, 2)
 
     summary = (
         f"base={base:.1f}, claim_support={claim_support or 'unknown'}, "
         f"supported claims={len(footprint.supported_resume_claims)}, "
-        f"unsupported claims={len(footprint.unsupported_resume_claims)}"
+        f"visited links={len(footprint.visited_links)}, repos={len(footprint.github_repos)}"
     )
     return score, summary
 
@@ -163,7 +171,7 @@ def calculate_score(
     professional_footprint, footprint_summary = _professional_footprint_score(footprint)
     hiring_context_fit, context_summary = _hiring_context_fit_score(context, evidence, transferable)
 
-    risk_penalty = round(_clamp(float(risk.risk_penalty), 0.0, 15.0), 2)
+    risk_penalty = round(_clamp(float(risk.risk_penalty) * 0.7, 0.0, 10.0), 2)
 
     final_score = (
         requirement_match * 0.35
