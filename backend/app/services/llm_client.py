@@ -1,4 +1,6 @@
 import json
+import asyncio
+import os
 from pathlib import Path
 from typing import Any
 
@@ -29,6 +31,24 @@ class LLMClient:
     def get_last_call_meta(self, agent_name: str) -> dict[str, Any]:
         return dict(self._last_meta_by_agent.get(agent_name, {}))
 
+    def _select_provider_for_agent(self, agent_name: str) -> ProviderConfig:
+        provider = self.router.primary
+        fast_model = os.getenv("LLM_FAST_MODEL", "").strip()
+        fast_agents_raw = os.getenv("LLM_FAST_AGENTS", "").strip()
+        if not fast_model or not fast_agents_raw:
+            return provider
+
+        fast_agents = {item.strip() for item in fast_agents_raw.split(",") if item.strip()}
+        if agent_name not in fast_agents:
+            return provider
+
+        return ProviderConfig(
+            provider=provider.provider,
+            base_url=provider.base_url,
+            api_key=provider.api_key,
+            model=fast_model,
+        )
+
     async def call_agent(
         self,
         agent_name: str,
@@ -53,7 +73,7 @@ class LLMClient:
         temperature: float = 0.2,
     ) -> tuple[dict, dict[str, Any]]:
         mode = self.router.llm_mode
-        primary = self.router.primary
+        primary = self._select_provider_for_agent(agent_name)
         cache_key = self.cache.make_cache_key(
             agent_name=agent_name,
             model=primary.model,
@@ -118,7 +138,8 @@ class LLMClient:
                     "errors": errors,
                 }
             except Exception as exc:
-                errors.append(f"provider={provider.provider} error={exc}")
+                detail = str(exc).strip() or repr(exc)
+                errors.append(f"provider={provider.provider} error={type(exc).__name__}: {detail}")
 
         mock_data = self._read_mock(agent_name)
         return mock_data, {
@@ -188,20 +209,45 @@ class LLMClient:
         body = {
             "model": provider.model,
             "temperature": temperature,
+            "response_format": {"type": "json_object"},
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": json.dumps(user_payload, ensure_ascii=True)},
             ],
         }
 
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            resp = await client.post(url, headers=headers, json=body)
+        last_error: Exception | None = None
+        for attempt in range(3):
+            try:
+                async with httpx.AsyncClient(timeout=120.0) as client:
+                    resp = await client.post(url, headers=headers, json=body)
 
-        if resp.status_code >= 400:
-            raise RuntimeError(f"LLM provider error {resp.status_code}")
+                if resp.status_code in {408, 409, 429, 500, 502, 503, 504} and attempt < 2:
+                    await asyncio.sleep(1.2 * (attempt + 1))
+                    continue
 
-        data = resp.json()
-        return self._extract_content(data)
+                if resp.status_code >= 400:
+                    excerpt = resp.text[:300].replace("\n", " ").strip()
+                    raise RuntimeError(f"LLM provider error {resp.status_code}: {excerpt}")
+
+                data = resp.json()
+                return self._extract_content(data)
+            except (httpx.TimeoutException, httpx.NetworkError, httpx.RemoteProtocolError) as exc:
+                last_error = exc
+                if attempt < 2:
+                    await asyncio.sleep(1.2 * (attempt + 1))
+                    continue
+                raise RuntimeError(f"LLM transport error after retries: {exc}") from exc
+            except json.JSONDecodeError as exc:
+                last_error = exc
+                if attempt < 2:
+                    await asyncio.sleep(0.8 * (attempt + 1))
+                    continue
+                raise RuntimeError(f"LLM response was not valid JSON: {exc}") from exc
+
+        if last_error is not None:
+            raise RuntimeError(f"LLM request failed: {last_error}") from last_error
+        raise RuntimeError("LLM request failed without a captured exception")
 
     @staticmethod
     def _extract_content(data: dict[str, Any]) -> str:

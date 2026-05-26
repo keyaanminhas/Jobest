@@ -166,7 +166,9 @@ LLM_MODE=live
 LLM_PROVIDER=chutes
 LLM_BASE_URL=https://llm.chutes.ai/v1
 LLM_API_KEY=your_chutes_api_key
-LLM_MODEL=deepseek-ai/DeepSeek-V3.2-TEE
+LLM_MODEL=Qwen/Qwen2.5-Coder-32B-Instruct-TEE
+LLM_FAST_MODEL=Qwen/Qwen2.5-Coder-32B-Instruct-TEE
+LLM_FAST_AGENTS=jd_deconstruction,hiring_context,resume_parser,evidence_extractor,transferable_skills,professional_footprint,risk_auditor,panel_review,interview_pack,final_report
 ALLOW_PROVIDER_FALLBACK=false
 USE_MOCK_LLM=false
 ```
@@ -176,8 +178,15 @@ You can also use provider-specific variables:
 ```env
 CHUTES_BASE_URL=https://llm.chutes.ai/v1
 CHUTES_API_KEY=your_chutes_api_key
-CHUTES_MODEL=deepseek-ai/DeepSeek-V3.2-TEE
+CHUTES_MODEL=Qwen/Qwen2.5-Coder-32B-Instruct-TEE
 ```
+
+Recommended model setup:
+
+- For the current Jobest pipeline, `Qwen/Qwen2.5-Coder-32B-Instruct-TEE` is the recommended Chutes default. It has been the most stable choice in this repo for structured JSON stages and end-to-end completion.
+- For quick demo turnaround, keep the same primary model and use `LLM_FAST_MODEL` for fast-path agents as shown above.
+- If you need lower latency than the `32B` model, prefer a lighter-weight Qwen-class instruct model available in your Chutes account and assign it through `LLM_FAST_MODEL` first before replacing the primary `LLM_MODEL`.
+- In practical terms: keep heavier reasoning on the main model, and downshift the fast agent pool only if you need faster candidate throughput during demos.
 
 Run the backend:
 

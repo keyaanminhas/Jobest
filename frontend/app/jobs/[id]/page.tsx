@@ -135,8 +135,11 @@ export default function JobPostingDetailPage() {
               </div>
               <div>{candidate.recommendation ? <RecommendationBadge recommendation={candidate.recommendation} /> : <span className="text-xs text-slate-500">Pending</span>}</div>
               <div className="flex flex-wrap gap-2">
-                <Link href={`/candidates/${candidate.id}`} className="rounded-lg border border-accent px-3 py-1.5 text-xs font-semibold text-accent">
-                  Open candidate
+                <Link
+                  href={`/candidates?jobId=${candidate.job_posting_id}&job=${encodeURIComponent(candidate.job_posting_title)}`}
+                  className="rounded-lg border border-accent px-3 py-1.5 text-xs font-semibold text-accent"
+                >
+                  Open candidates
                 </Link>
                 {candidate.report_ready ? (
                   <Link href={`/candidates/${candidate.id}/report`} className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-white">

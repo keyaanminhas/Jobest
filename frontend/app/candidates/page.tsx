@@ -22,6 +22,10 @@ export default function CandidatesIndexPage() {
     if (typeof window === "undefined") return;
     const urlParams = new URLSearchParams(window.location.search);
     setQuery((urlParams.get("q") || "").trim().toLowerCase());
+    const jobId = (urlParams.get("jobId") || "").trim();
+    if (jobId) {
+      setPostingFilter(jobId);
+    }
   }, []);
 
   useEffect(() => {
@@ -87,7 +91,11 @@ export default function CandidatesIndexPage() {
   return (
     <AppShell
       title="Candidates"
-      subtitle="Applicant operations view across job postings with triage/final score tracking and one-click analysis."
+      subtitle={
+        postingFilter !== "all"
+          ? "Applicant operations view filtered to a single job posting with triage/final score tracking and one-click analysis."
+          : "Applicant operations view across job postings with triage/final score tracking and one-click analysis."
+      }
     >
       <Panel title="Candidate Operations" subtitle="Current score uses triage (0-80) until full analysis completes, then switches to final score (0-100).">
         <div className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">

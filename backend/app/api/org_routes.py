@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import hashlib
 import json
@@ -116,6 +117,15 @@ def _frontend_app_url() -> str:
 
 def _chutes_scopes() -> str:
     return os.getenv("CHUTES_OAUTH_SCOPES", "profile:read").strip() or "profile:read"
+
+
+def _analysis_timeout_seconds() -> float:
+    raw = os.getenv("ANALYSIS_RUN_TIMEOUT_SECONDS", "900").strip()
+    try:
+        value = float(raw)
+    except ValueError:
+        return 900.0
+    return max(60.0, value)
 
 
 def _pkce_challenge(verifier: str) -> str:
@@ -432,8 +442,76 @@ async def _get_owned_candidate_or_404(db: AsyncSession, user_id: str, candidate_
     return candidate
 
 
+async def _recover_stale_analysis_runs_on_startup() -> int:
+    recovered = 0
+    async with SessionLocal() as db:
+        active_runs = (
+            await db.scalars(
+                select(CandidateAnalysisRun)
+                .where(CandidateAnalysisRun.status.in_(["queued", "processing"]))
+                .options(selectinload(CandidateAnalysisRun.candidate))
+            )
+        ).all()
+
+        if not active_runs:
+            return 0
+
+        now = datetime.utcnow()
+        touched_candidate_ids: set[str] = set()
+        for run in active_runs:
+            run.status = "error"
+            run.completed_at = now
+            summary = "Recovered after backend restart while analysis was still queued or processing."
+            run.report_summary = summary
+            candidate = run.candidate
+            if candidate is not None:
+                candidate.analysis_status = "error"
+                touched_candidate_ids.add(candidate.id)
+                db.add(
+                    Notification(
+                        user_id=candidate.uploaded_by_user_id,
+                        title="Pipeline reset after restart",
+                        body=(
+                            f"Analysis for {candidate.display_name} was reset because the backend restarted "
+                            "while a queue item was still active."
+                        ),
+                        notification_type="pipeline_failed",
+                        candidate_id=candidate.id,
+                        analysis_run_id=run.id,
+                        is_read=False,
+                    )
+                )
+                existing_stage = await db.scalar(
+                    select(CandidateStageOutput)
+                    .where(
+                        CandidateStageOutput.analysis_run_id == run.id,
+                        CandidateStageOutput.stage_name == "Pipeline Recovery",
+                    )
+                    .order_by(CandidateStageOutput.created_at.desc(), CandidateStageOutput.id.desc())
+                )
+                if existing_stage is None:
+                    db.add(
+                        CandidateStageOutput(
+                            analysis_run_id=run.id,
+                            stage_name="Pipeline Recovery",
+                            status="error",
+                            summary=summary,
+                            raw_output_json={"error": "startup_recovery", "message": summary},
+                        )
+                    )
+                else:
+                    existing_stage.status = "error"
+                    existing_stage.summary = summary
+                    existing_stage.raw_output_json = {"error": "startup_recovery", "message": summary}
+            recovered += 1
+
+        await db.commit()
+        return recovered
+
+
 @router.on_event("startup")
 async def startup_analysis_queue() -> None:
+    await _recover_stale_analysis_runs_on_startup()
     await analysis_queue_manager.start(_run_candidate_analysis_background)
 
 
@@ -1121,7 +1199,10 @@ async def _run_candidate_analysis_background(candidate_id: str, analysis_run_id:
             await db.commit()
 
         try:
-            results = await _orchestrator.run_pipeline(run_data, progress_callback=progress_callback)
+            results = await asyncio.wait_for(
+                _orchestrator.run_pipeline(run_data, progress_callback=progress_callback),
+                timeout=_analysis_timeout_seconds(),
+            )
             chosen = (results.get("candidates") or [{}])[0]
             score = chosen.get("score", {})
             panel_review = chosen.get("panel_review", {})
@@ -1169,6 +1250,38 @@ async def _run_candidate_analysis_background(candidate_id: str, analysis_run_id:
                 existing_output.panel_review_json = panel_review
                 existing_output.interview_pack_json = interview_pack
 
+            await db.commit()
+        except asyncio.TimeoutError:
+            run.status = "error"
+            run.completed_at = datetime.utcnow()
+            run.report_summary = "Analysis timed out before the pipeline could finish."
+            candidate.analysis_status = "error"
+            db.add(
+                CandidateStageOutput(
+                    analysis_run_id=analysis_run_id,
+                    stage_name="Pipeline",
+                    status="error",
+                    summary="Pipeline timed out before completion.",
+                    raw_output_json={
+                        "error": "analysis_timeout",
+                        "timeout_seconds": _analysis_timeout_seconds(),
+                    },
+                )
+            )
+            db.add(
+                Notification(
+                    user_id=candidate.uploaded_by_user_id,
+                    title="Pipeline timed out",
+                    body=(
+                        f"{candidate.display_name} analysis timed out for {posting.title} "
+                        "before the pipeline could finish."
+                    ),
+                    notification_type="pipeline_failed",
+                    candidate_id=candidate.id,
+                    analysis_run_id=analysis_run_id,
+                    is_read=False,
+                )
+            )
             await db.commit()
         except Exception as exc:
             run.status = "error"

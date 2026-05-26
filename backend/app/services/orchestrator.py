@@ -141,12 +141,13 @@ class PipelineOrchestrator:
                 await progress_callback(pipeline, candidates_out or [])
             return fallback_model
         except Exception as exc:
+            detail = str(exc).strip() or repr(exc)
             pipeline.append(
                 self._stage_entry(
                     stage_name,
                     "error",
-                    f"{type(exc).__name__}: {exc}",
-                    {"error": str(exc)},
+                    f"{type(exc).__name__}: {detail}",
+                    {"error": detail},
                 )
             )
             if progress_callback is not None:

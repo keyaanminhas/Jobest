@@ -70,8 +70,12 @@ async def llm_triage_assist(
         score = float(data.get("llm_triage_score", 0.0))
         summary = str(data.get("triage_summary", "")).strip()
         return round(_clamp(score), 2), summary or "LLM triage completed.", "completed"
-    except Exception as exc:
-        return 0.0, f"LLM triage unavailable: {exc}", "fallback_code_only"
+    except Exception:
+        return (
+            0.0,
+            "AI-assisted triage insight is temporarily unavailable, so the initial ranking is based on keyword and skill matching only.",
+            "fallback_code_only",
+        )
 
 
 async def score_candidate_triage(
@@ -105,9 +109,9 @@ async def score_candidate_triage(
     triage_base = keyword_score * 0.75 + llm_score * 0.25
     final_score = round(_clamp((triage_base / 100.0) * 80.0, maximum=80.0), 2)
     summary = (
-        f"Keyword score {keyword_score}/100. "
-        f"LLM assist {llm_score}/100. "
-        f"Scaled triage score {final_score}/80. "
+        f"Initial keyword alignment {keyword_score}/100. "
+        f"AI-assisted triage {llm_score}/100. "
+        f"Current triage score {final_score}/80. "
         f"{llm_summary}"
     ).strip()
 

@@ -80,7 +80,7 @@ export function RunLoader({
             <h2 className="font-heading text-xl font-bold text-slate-950">Backend or local run unavailable</h2>
             <p className="mt-2 text-sm leading-7 text-slate-600">
               {state.error ??
-                "The requested hiring run could not be loaded. You can still use the polished demo flow while the SSH tunnel or backend is offline."}
+                "The requested hiring run could not be loaded. You can open a sample workflow or return to the dashboard while the backend is unavailable."}
             </p>
             <div className="mt-5 flex flex-wrap gap-3">
               <button
@@ -92,14 +92,14 @@ export function RunLoader({
                 className="inline-flex items-center gap-2 rounded-2xl bg-accent px-5 py-3 text-sm font-semibold text-white"
               >
                 <PlayCircle className="h-4 w-4" />
-                Load Demo Scenario
+                Open Sample Workflow
               </button>
               <Link
                 href={`/runs/${demoRunId}/shortlist`}
                 className="inline-flex items-center gap-2 rounded-2xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700"
               >
                 <Download className="h-4 w-4" />
-                Open Demo Shortlist
+                Open Sample Shortlist
               </Link>
               <Link
                 href="/"

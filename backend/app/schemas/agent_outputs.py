@@ -164,7 +164,50 @@ class TransferableSkillsOutput(BaseModel):
         coerced: list[dict[str, Any]] = []
         for item in value:
             if isinstance(item, dict):
-                coerced.append(item)
+                requirement = str(
+                    item.get("requirement")
+                    or item.get("job_requirement")
+                    or item.get("skill_requirement")
+                    or item.get("target_skill")
+                    or ""
+                ).strip()
+                candidate_skill = str(
+                    item.get("candidate_skill")
+                    or item.get("matched_skill")
+                    or item.get("resume_skill")
+                    or item.get("skill")
+                    or ""
+                ).strip()
+                evidence = str(
+                    item.get("evidence")
+                    or item.get("details")
+                    or item.get("proof")
+                    or ""
+                ).strip()
+                reasoning = str(
+                    item.get("reasoning")
+                    or item.get("rationale")
+                    or item.get("explanation")
+                    or ""
+                ).strip()
+                confidence = str(item.get("confidence") or "medium").strip().lower()
+                if confidence not in {"high", "medium", "low"}:
+                    confidence = "medium"
+                if not requirement and candidate_skill:
+                    requirement = candidate_skill
+                if not candidate_skill and requirement:
+                    candidate_skill = requirement
+                if not requirement and not candidate_skill:
+                    continue
+                coerced.append(
+                    {
+                        "requirement": requirement or "Unspecified requirement",
+                        "candidate_skill": candidate_skill or "Unspecified skill",
+                        "evidence": evidence,
+                        "reasoning": reasoning or "Normalized from model output",
+                        "confidence": confidence,
+                    }
+                )
             elif isinstance(item, str):
                 coerced.append(
                     {
@@ -184,7 +227,26 @@ class TransferableSkillsOutput(BaseModel):
         coerced: list[dict[str, Any]] = []
         for item in value:
             if isinstance(item, dict):
-                coerced.append(item)
+                requirement = str(
+                    item.get("requirement")
+                    or item.get("job_requirement")
+                    or item.get("skill_requirement")
+                    or ""
+                ).strip()
+                reason = str(
+                    item.get("reason")
+                    or item.get("gap_reason")
+                    or item.get("details")
+                    or ""
+                ).strip()
+                if not requirement and not reason:
+                    continue
+                coerced.append(
+                    {
+                        "requirement": requirement or "Unspecified requirement",
+                        "reason": reason or "Normalized from model output",
+                    }
+                )
             elif isinstance(item, str):
                 coerced.append(
                     {
@@ -433,6 +495,35 @@ class RiskAuditOutput(BaseModel):
     risks: list[str] = Field(default_factory=list)
     recommended_interview_focus: list[str] = Field(default_factory=list)
 
+    @field_validator("risk_level", mode="before")
+    @classmethod
+    def _normalize_risk_level(cls, value: Any) -> str:
+        text = str(value or "").strip().lower()
+        if text in {"low", "medium", "high"}:
+            return text
+        if "high" in text:
+            return "high"
+        if "low" in text:
+            return "low"
+        return "medium"
+
+    @field_validator("risks", "recommended_interview_focus", mode="before")
+    @classmethod
+    def _normalize_string_lists(cls, value: Any) -> list[str]:
+        if not isinstance(value, list):
+            return []
+        normalized: list[str] = []
+        for item in value:
+            if isinstance(item, str):
+                text = item.strip()
+                if text:
+                    normalized.append(text)
+            elif isinstance(item, dict):
+                text = str(item.get("risk") or item.get("reason") or item.get("focus") or item.get("summary") or "").strip()
+                if text:
+                    normalized.append(text)
+        return normalized
+
 
 class PanelReviewOutput(BaseModel):
     technical_lead_view: str = ""
@@ -440,6 +531,24 @@ class PanelReviewOutput(BaseModel):
     hiring_manager_view: str = ""
     risk_auditor_view: str = ""
     final_panel_recommendation: str = ""
+
+    @field_validator(
+        "technical_lead_view",
+        "hr_recruiter_view",
+        "hiring_manager_view",
+        "risk_auditor_view",
+        "final_panel_recommendation",
+        mode="before",
+    )
+    @classmethod
+    def _normalize_panel_fields(cls, value: Any) -> str:
+        if isinstance(value, str):
+            return value.strip()
+        if isinstance(value, dict):
+            return str(value.get("summary") or value.get("view") or value.get("recommendation") or "").strip()
+        if isinstance(value, list):
+            return " ".join(str(item).strip() for item in value if str(item).strip())
+        return str(value or "").strip()
 
 
 class InterviewQuestion(BaseModel):
@@ -480,3 +589,44 @@ class FinalReportOutput(BaseModel):
     top_candidates: list[dict[str, Any]] = Field(default_factory=list)
     risks_to_verify: list[str] = Field(default_factory=list)
     suggested_next_action: str = ""
+
+    @field_validator("summary", "suggested_next_action", mode="before")
+    @classmethod
+    def _normalize_text_fields(cls, value: Any) -> str:
+        if isinstance(value, str):
+            return value.strip()
+        if isinstance(value, list):
+            return " ".join(str(item).strip() for item in value if str(item).strip())
+        if isinstance(value, dict):
+            return str(value.get("summary") or value.get("action") or "").strip()
+        return str(value or "").strip()
+
+    @field_validator("risks_to_verify", mode="before")
+    @classmethod
+    def _normalize_risks_to_verify(cls, value: Any) -> list[str]:
+        if not isinstance(value, list):
+            return []
+        normalized: list[str] = []
+        for item in value:
+            if isinstance(item, str):
+                text = item.strip()
+                if text:
+                    normalized.append(text)
+            elif isinstance(item, dict):
+                text = str(item.get("risk") or item.get("reason") or item.get("summary") or "").strip()
+                if text:
+                    normalized.append(text)
+        return normalized
+
+    @field_validator("top_candidates", mode="before")
+    @classmethod
+    def _normalize_top_candidates(cls, value: Any) -> list[dict[str, Any]]:
+        if not isinstance(value, list):
+            return []
+        normalized: list[dict[str, Any]] = []
+        for item in value:
+            if isinstance(item, dict):
+                normalized.append(item)
+            elif isinstance(item, str):
+                normalized.append({"name": item.strip(), "score": None, "status": ""})
+        return normalized

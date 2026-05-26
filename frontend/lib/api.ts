@@ -300,7 +300,7 @@ export async function resolveRun(runId: string): Promise<{ run: HiringRunRecord;
     if (local) {
       return { run: local, source: "local", offline: false };
     }
-    throw new Error("Run not found in local cache or backend. Use live run upload or load the demo scenario.");
+    throw new Error("Run not found in local cache or backend. Start a new hiring run or reopen a saved workflow.");
   }
 }
 

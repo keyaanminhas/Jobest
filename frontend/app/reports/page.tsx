@@ -176,6 +176,7 @@ export default function ReportsIndexPage() {
     if (filtered.length === 0 || jobs.length === 0) return null;
     return jobs.find((j) => j.id === filtered[0].job_posting_id) ?? jobs[0] ?? null;
   }, [filtered, jobs, selectedJobId]);
+  const isAllPostingsView = selectedJobId === "all";
 
   const scoreDist = useMemo(() => {
     const d = { high: 0, mid: 0, low: 0 };
@@ -347,13 +348,15 @@ export default function ReportsIndexPage() {
             </div>
             <div className="min-w-0">
               <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
-                Job Title
+                {isAllPostingsView ? "Hiring Scope" : "Job Title"}
               </div>
               <div className="mt-0.5 truncate text-[15px] font-semibold text-slate-900">
-                {primaryJob?.title ?? reports[0].job_posting_title}
+                {isAllPostingsView ? "All job postings" : primaryJob?.title ?? reports[0].job_posting_title}
               </div>
               <div className="mt-0.5 truncate text-[12px] text-slate-500">
-                {primaryJob?.company_priority ?? "Recruiting"}
+                {isAllPostingsView
+                  ? `${jobsWithReports.length} postings with completed reports`
+                  : primaryJob?.company_priority ?? "Recruiting"}
               </div>
             </div>
           </div>
@@ -368,8 +371,9 @@ export default function ReportsIndexPage() {
                 Hiring Context Summary
               </div>
               <p className="mt-1 line-clamp-3 text-[12px] leading-5 text-slate-600">
-                {primaryJob?.hiring_context ||
-                  "Multi-agent evidence review for shortlisting and scoring."}
+                {isAllPostingsView
+                  ? "Portfolio-wide hiring view across completed reports, candidate comparisons, and shortlist outcomes."
+                  : primaryJob?.hiring_context || "Evidence-backed review for shortlisting and scoring."}
               </p>
             </div>
           </div>
@@ -623,10 +627,9 @@ export default function ReportsIndexPage() {
               Final Recommendation
             </h3>
             <p className="text-[13px] leading-6 text-slate-600">
-              Based on multi-agent evidence analysis across {filtered.length} candidate
-              {filtered.length !== 1 ? "s" : ""}, the top shortlisted candidates demonstrate strong
-              alignment with core role requirements. Proceed with structured interviews focusing on
-              verified strengths and flagged risk areas.
+              {isAllPostingsView
+                ? `Based on completed evaluations across ${filtered.length} candidate${filtered.length !== 1 ? "s" : ""}, this view highlights the strongest interview-ready profiles across all tracked job postings. Use it to compare shortlist quality, review repeated strengths, and prioritize next recruiter actions.`
+                : `Based on completed evidence review across ${filtered.length} candidate${filtered.length !== 1 ? "s" : ""}, the top shortlisted candidates demonstrate strong alignment with core role requirements. Proceed with structured interviews focusing on verified strengths and flagged risk areas.`}
             </p>
             {top5.length > 0 && (
               <div className="mt-4 rounded-xl bg-emerald-50 p-3 text-[13px] font-semibold text-emerald-700">
@@ -644,7 +647,7 @@ export default function ReportsIndexPage() {
             </h3>
             <p className="text-[13px] leading-6 text-slate-600">
               Candidates not shortlisted were evaluated fairly across all criteria. Scores are derived
-              from structured, deterministic evidence review — not subjective AI rankings. Each
+              from structured, deterministic evidence review rather than opaque ranking logic. Each
               candidate&apos;s full report provides transparent reasoning that can support compliant
               rejection communication.
             </p>
@@ -654,3 +657,4 @@ export default function ReportsIndexPage() {
     </AppShell>
   );
 }
+

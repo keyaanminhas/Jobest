@@ -28,18 +28,19 @@ function initialsFromName(name: string) {
 }
 
 function ScoreRingLg({ score }: { score: number }) {
-  const angle = Math.round((score / 100) * 360);
+  const normalizedScore = Math.max(0, Math.min(100, score || 0));
+  const angle = Math.round((normalizedScore / 100) * 360);
   return (
     <div
-      className="grid h-24 w-24 place-items-center rounded-full shadow-sm"
-      style={{ background: `conic-gradient(#1d4ed8 ${angle}deg, #e2e8f0 0deg)` }}
+      className="grid h-28 w-28 place-items-center rounded-full p-2 shadow-[0_18px_38px_rgba(29,78,216,0.16)]"
+      style={{ background: `conic-gradient(#1d4ed8 ${angle}deg, #e5e7eb 0deg)` }}
     >
-      <div className="grid h-[74px] w-[74px] place-items-center rounded-full bg-white">
+      <div className="grid h-full w-full place-items-center rounded-full bg-white shadow-inner">
         <div className="text-center">
-          <div className="font-heading text-[1.55rem] font-extrabold leading-none text-slate-950">
-            {Math.round(score)}
+          <div className="font-heading text-[2rem] font-extrabold leading-none text-slate-950">
+            {Math.round(normalizedScore)}
           </div>
-          <div className="mt-0.5 text-[10px] font-semibold uppercase tracking-widest text-slate-400">/ 100</div>
+          <div className="mt-1 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Score</div>
         </div>
       </div>
     </div>
@@ -227,7 +228,7 @@ export default function CandidateReportPage() {
           <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
 
             {/* Nav row */}
-            <div className="mb-6 flex items-center justify-between pr-3 print:hidden lg:pr-8">
+            <div className="mb-6 flex items-start justify-between gap-4 print:hidden">
               <Link
                 href={`/candidates/${candidateId}`}
                 className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-slate-600 transition-colors hover:text-accent"
@@ -235,29 +236,18 @@ export default function CandidateReportPage() {
                 <ArrowLeft className="h-4 w-4" />
                 Back to Shortlist
               </Link>
-              <button
-                type="button"
-                onClick={() => window.print()}
-                className="inline-flex items-center gap-2 rounded-xl bg-accent px-4 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-blue-700"
-              >
-                <Download className="h-4 w-4" />
-                Download Report
-              </button>
             </div>
 
             {/* Candidate info row */}
-            <div className="flex flex-col gap-6 pr-3 lg:flex-row lg:items-start lg:justify-start lg:gap-12 lg:pr-8">
+            <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_260px] lg:items-center">
 
               {/* Left: avatar + name + details + summary */}
-              <div className="flex min-w-0 gap-5">
+              <div className="flex min-w-0 gap-5 lg:-translate-y-2">
 
                 {/* Avatar */}
                 <div className="relative shrink-0">
                   <div className="grid h-[72px] w-[72px] place-items-center rounded-full bg-gradient-to-br from-accent to-blue-800 text-xl font-bold text-white shadow-sm">
                     {initialsFromName(view.candidate_name)}
-                  </div>
-                  <div className="absolute -bottom-0.5 -right-0.5 rounded-full bg-white p-0.5 shadow-sm">
-                    <BadgeCheck className="h-[18px] w-[18px] text-accent" />
                   </div>
                 </div>
 
@@ -275,22 +265,53 @@ export default function CandidateReportPage() {
                     <span className="text-slate-200">|</span>
                     <span>Comp not provided</span>
                   </div>
-                  <p className="mt-3 max-w-2xl text-[13.5px] leading-7 text-slate-600">{view.candidate_summary}</p>
+                  <p className="mt-3 max-w-3xl text-[13.5px] leading-7 text-slate-600">{view.candidate_summary}</p>
                 </div>
               </div>
 
-              {/* Right: score ring + recommendation */}
-              <div className="flex shrink-0 flex-col items-center gap-3 lg:ml-2 lg:mr-2">
-                <ScoreRingLg score={view.final_score} />
-                <div className="space-y-1.5 text-center">
-                  {view.recommendation ? (
-                    <RecommendationBadge recommendation={view.recommendation} />
-                  ) : (
-                    <span className="text-[13px] text-slate-500">Pending</span>
-                  )}
-                  <div className="text-[11px] uppercase tracking-[0.15em] text-slate-400">Overall Match</div>
+              {/* Right: report action + score */}
+              <aside className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm lg:-translate-y-2 lg:self-center">
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="group flex w-full items-center justify-between gap-3 rounded-xl bg-accent px-4 py-3 text-left text-white transition-colors hover:bg-blue-700 print:hidden"
+                >
+                  <span className="inline-flex items-center gap-2 text-[13px] font-bold">
+                    <span className="grid h-8 w-8 place-items-center rounded-full bg-white/12 ring-1 ring-white/15 transition-colors group-hover:bg-white/18">
+                      <Download className="h-4 w-4" />
+                    </span>
+                    Download Report
+                  </span>
+                  <span className="rounded-full bg-white/12 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-white/75">
+                    PDF
+                  </span>
+                </button>
+
+                <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-5">
+                  <div className="flex flex-col items-center gap-4">
+                    <ScoreRingLg score={view.final_score} />
+                    <div className="space-y-2 text-center">
+                      {view.recommendation ? (
+                        <RecommendationBadge recommendation={view.recommendation} />
+                      ) : (
+                        <span className="text-[13px] text-slate-500">Pending</span>
+                      )}
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                        Overall Match
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-5 rounded-xl border border-slate-200 bg-white px-3 py-2.5">
+                    <div className="flex items-center justify-between text-[12px]">
+                      <span className="font-semibold text-slate-500">Final score</span>
+                      <span className="font-heading text-[16px] font-extrabold text-slate-950">
+                        {Math.round(view.final_score)} / 100
+                      </span>
+                    </div>
+                  </div>
                 </div>
-              </div>
+              </aside>
             </div>
           </div>
 
