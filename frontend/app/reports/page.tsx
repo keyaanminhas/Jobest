@@ -114,6 +114,7 @@ export default function ReportsIndexPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [selectedJobId, setSelectedJobId] = useState<string>("all");
+  const [actionMessage, setActionMessage] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -224,6 +225,28 @@ export default function ReportsIndexPage() {
     return notes.length > 0 ? notes : ["No candidates to verify yet"];
   }, [top5, candidateMap]);
 
+  const handleExportPdf = () => {
+    window.print();
+  };
+
+  const handleShareReport = async () => {
+    const shareUrl = window.location.href;
+    const shareTitle = "Hiring Report";
+    const shareText = "Review this hiring report.";
+
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: shareTitle, text: shareText, url: shareUrl });
+        setActionMessage("Report share dialog opened.");
+        return;
+      }
+      await navigator.clipboard.writeText(shareUrl);
+      setActionMessage("Report link copied to clipboard.");
+    } catch {
+      setActionMessage("Unable to share automatically. Copy the URL from your browser.");
+    }
+  };
+
   /* ── Loading / Error / Empty ── */
 
   if (loading) return <div className="min-h-screen bg-[#f7f9fc]" />;
@@ -256,9 +279,10 @@ export default function ReportsIndexPage() {
       title="Hiring Report"
       subtitle="Final evidence-backed shortlist and recommendations."
       actions={
-        <div className="flex gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <button
             type="button"
+            onClick={handleExportPdf}
             className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 px-4 py-2.5 text-[13px] font-semibold text-slate-600 transition-colors duration-150 hover:bg-slate-50"
           >
             <Download className="h-4 w-4" />
@@ -266,11 +290,13 @@ export default function ReportsIndexPage() {
           </button>
           <button
             type="button"
+            onClick={() => void handleShareReport()}
             className="inline-flex cursor-pointer items-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-[13px] font-semibold text-white transition-colors duration-150 hover:bg-blue-700"
           >
             <Share2 className="h-4 w-4" />
             Share Report
           </button>
+          {actionMessage ? <span className="text-[12px] text-slate-500">{actionMessage}</span> : null}
         </div>
       }
     >

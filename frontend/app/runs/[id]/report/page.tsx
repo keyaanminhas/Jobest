@@ -2,21 +2,61 @@
 
 import { AppShell } from "@/components/app-shell";
 import { RunLoader } from "@/components/run-loader";
-import { Panel, RecommendationBadge, ScoreRing, SecondaryButton } from "@/components/ui";
+import { Panel, RecommendationBadge, ScoreRing } from "@/components/ui";
 import { useParams } from "next/navigation";
+import { Share2, Download } from "lucide-react";
+import { useState } from "react";
 
 export default function ReportPage() {
   const params = useParams<{ id: string }>();
   const id = params.id;
+  const [actionMessage, setActionMessage] = useState("");
+
+  const handleExportPdf = () => {
+    window.print();
+  };
+
+  const handleShareReport = async () => {
+    const shareUrl = window.location.href;
+    const shareTitle = "Hiring Report";
+    const shareText = "Review this hiring report.";
+
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: shareTitle, text: shareText, url: shareUrl });
+        setActionMessage("Report share dialog opened.");
+        return;
+      }
+      await navigator.clipboard.writeText(shareUrl);
+      setActionMessage("Report link copied to clipboard.");
+    } catch {
+      setActionMessage("Unable to share automatically. Copy the URL from your browser.");
+    }
+  };
 
   return (
     <AppShell
       title="Hiring Report"
       subtitle="Final evidence-backed shortlist and recommendations for recruiter review."
       actions={
-        <div className="flex flex-wrap gap-3">
-          <SecondaryButton href={`/runs/${id}/shortlist`}>Export PDF</SecondaryButton>
-          <SecondaryButton href={`/runs/${id}/pipeline`}>Share Report</SecondaryButton>
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={handleExportPdf}
+            className="inline-flex items-center justify-center gap-2 rounded-xl border border-accent bg-white px-5 py-3 text-[14px] font-semibold text-accent transition hover:bg-blue-50"
+          >
+            <Download className="h-4 w-4" />
+            Export PDF
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleShareReport()}
+            className="inline-flex items-center justify-center gap-2 rounded-xl border border-accent bg-white px-5 py-3 text-[14px] font-semibold text-accent transition hover:bg-blue-50"
+          >
+            <Share2 className="h-4 w-4" />
+            Share Report
+          </button>
+          {actionMessage ? <span className="text-[12px] text-slate-500">{actionMessage}</span> : null}
         </div>
       }
     >

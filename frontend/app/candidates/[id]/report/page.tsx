@@ -227,7 +227,7 @@ export default function CandidateReportPage() {
           <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
 
             {/* Nav row */}
-            <div className="mb-6 flex items-center justify-between print:hidden">
+            <div className="mb-6 flex items-center justify-between pr-3 print:hidden lg:pr-8">
               <Link
                 href={`/candidates/${candidateId}`}
                 className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-slate-600 transition-colors hover:text-accent"
@@ -246,7 +246,7 @@ export default function CandidateReportPage() {
             </div>
 
             {/* Candidate info row */}
-            <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+            <div className="flex flex-col gap-6 pr-3 lg:flex-row lg:items-start lg:justify-start lg:gap-12 lg:pr-8">
 
               {/* Left: avatar + name + details + summary */}
               <div className="flex min-w-0 gap-5">
@@ -280,7 +280,7 @@ export default function CandidateReportPage() {
               </div>
 
               {/* Right: score ring + recommendation */}
-              <div className="flex shrink-0 flex-col items-center gap-3 lg:ml-4">
+              <div className="flex shrink-0 flex-col items-center gap-3 lg:ml-2 lg:mr-2">
                 <ScoreRingLg score={view.final_score} />
                 <div className="space-y-1.5 text-center">
                   {view.recommendation ? (
