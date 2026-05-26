@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState, useTransition } from "react";
 import { getChutesAuthUrl, login } from "@/lib/api";
-import { Eye, EyeOff, ArrowRight, CheckCircle2, Sparkles, ShieldCheck } from "lucide-react";
+import { Eye, EyeOff, ArrowRight, CheckCircle2, Sparkles } from "lucide-react";
 
 const features = [
   "11-stage multi-agent pipeline from JD to final report",
@@ -115,7 +115,7 @@ function LoginPageContent() {
               href={getChutesAuthUrl()}
               className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-5 py-3 text-[14px] font-semibold text-slate-700 transition-colors duration-150 hover:border-slate-300 hover:bg-slate-50"
             >
-              <ShieldCheck className="h-4 w-4 text-accent" />
+              <img src="https://www.claraverse.space/images/chutes-logo.jpg" alt="Chutes AI" className="h-4 w-auto rounded-sm" />
               Sign in with Chutes
             </a>
 

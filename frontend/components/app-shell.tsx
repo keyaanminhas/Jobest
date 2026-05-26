@@ -27,6 +27,25 @@ const navItems = [
   { href: "/reports", label: "Reports", icon: ChartColumnBig },
 ];
 
+function resolveTabTitle(pathname: string, pageTitle?: string) {
+  const trimmedTitle = (pageTitle || "").trim();
+  if (trimmedTitle) return `Jobest | ${trimmedTitle}`;
+
+  if (pathname === "/jobs") return "Jobest | Dashboard";
+  if (pathname.startsWith("/jobs/current")) return "Jobest | Current Postings";
+  if (pathname.startsWith("/jobs/new")) return "Jobest | New Posting";
+  if (pathname.startsWith("/jobs/")) return "Jobest | Job Details";
+  if (pathname === "/candidates") return "Jobest | Candidates";
+  if (pathname.startsWith("/candidates/") && pathname.endsWith("/report")) return "Jobest | Candidate Report";
+  if (pathname.startsWith("/candidates/")) return "Jobest | Candidate";
+  if (pathname === "/reports") return "Jobest | Reports";
+  if (pathname.startsWith("/runs/") && pathname.endsWith("/pipeline")) return "Jobest | Hiring Pipeline";
+  if (pathname.startsWith("/runs/") && pathname.endsWith("/shortlist")) return "Jobest | Shortlist";
+  if (pathname.startsWith("/runs/") && pathname.endsWith("/report")) return "Jobest | Hiring Report";
+  if (pathname === "/privacy-policy") return "Jobest | Privacy Policy";
+  return "Jobest";
+}
+
 function isNavItemActive(pathname: string, href: string) {
   if (href === "/jobs") {
     return pathname === "/jobs";
@@ -161,6 +180,10 @@ export function AppShell({
     return () => window.removeEventListener("keydown", handleKey);
   }, []);
 
+  useEffect(() => {
+    document.title = resolveTabTitle(pathname, title);
+  }, [pathname, title]);
+
   return (
     <div className="min-h-screen bg-[#f7f9fc]">
       <div className="mx-auto flex max-w-[1720px]">
@@ -192,21 +215,30 @@ export function AppShell({
             })}
           </nav>
 
-          <div className="mt-auto rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 via-white to-blue-50 p-4">
-            <div className="text-xs uppercase tracking-[0.2em] text-slate-500">Workspace Health</div>
-            <div className="mt-2 flex items-center justify-between">
-              <div>
-                <div className="font-semibold text-slate-900">Enterprise Suite</div>
-                <div className="text-xs text-slate-500">Seat usage 24 / 50 active</div>
-              </div>
-              <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">Healthy</span>
-            </div>
-            <div className="mt-4 h-2 rounded-full bg-slate-200">
-              <div className="h-2 w-[62%] rounded-full bg-accent" />
-            </div>
-            <div className="mt-2 flex items-center justify-between text-[11px] text-slate-500">
-              <span>Pipeline SLA</span>
-              <span className="font-semibold text-slate-700">96.4%</span>
+          <div className="mt-auto rounded-2xl border border-slate-200 bg-white p-4">
+            <div className="text-xs uppercase tracking-[0.2em] text-slate-500">Quick Actions</div>
+            <div className="mt-3 space-y-2">
+              <Link
+                href="/jobs/new"
+                className="flex items-center justify-between rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+              >
+                <span>Create new posting</span>
+                <Plus className="h-4 w-4 text-accent" />
+              </Link>
+              <Link
+                href="/jobs/current"
+                className="flex items-center justify-between rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+              >
+                <span>View current postings</span>
+                <BriefcaseBusiness className="h-4 w-4 text-accent" />
+              </Link>
+              <Link
+                href="/reports"
+                className="flex items-center justify-between rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+              >
+                <span>Open reports</span>
+                <ChartColumnBig className="h-4 w-4 text-accent" />
+              </Link>
             </div>
           </div>
 
@@ -374,19 +406,18 @@ export function AppShell({
                 </div>
               )}
               {children}
-              {!noPageHeader && <footer className="mt-8 border-t border-slate-100 pt-4 print:hidden">
-                <div className="flex flex-col gap-4 text-[12px] text-slate-500 md:flex-row md:items-center md:justify-between">
-                  <p className="max-w-2xl leading-6">
-                    Decision-support for recruiters using multi-agent evidence review, deterministic scoring, and database-backed workflow state.
-                  </p>
-                  <div className="flex flex-wrap gap-x-6 gap-y-2">
-                    <span>Frontend: Next.js + Tailwind</span>
-                    <span>Backend: FastAPI + SQLite</span>
-                    <span>Mode: Org MVP</span>
-                  </div>
-                </div>
-              </footer>}
             </div>
+            {!noPageHeader && <footer className="mt-4 print:hidden">
+              <div className="flex items-center justify-center gap-3 border-t border-slate-200 pt-4 text-[12px] text-slate-500">
+                <Link href="/privacy-policy" className="font-semibold text-accent hover:underline">
+                  Privacy Policy
+                </Link>
+                <span className="text-slate-400">|</span>
+                <p className="leading-6 text-slate-600">
+                  Copyright © {new Date().getFullYear()} C0nc3pt Squad
+                </p>
+              </div>
+            </footer>}
           </div>
         </main>
       </div>

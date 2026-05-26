@@ -16,6 +16,11 @@ const plex = IBM_Plex_Sans({
 export const metadata: Metadata = {
   title: "Jobest",
   description: "Multi-agent recruitment intelligence for evidence-backed shortlisting.",
+  icons: {
+    icon: "/icon.svg",
+    shortcut: "/icon.svg",
+    apple: "/icon.svg",
+  },
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

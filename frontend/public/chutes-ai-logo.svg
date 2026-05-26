@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 32" role="img" aria-label="Chutes AI">
+  <defs>
+    <linearGradient id="chutesGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#2563eb" />
+      <stop offset="100%" stop-color="#1d4ed8" />
+    </linearGradient>
+  </defs>
+  <rect x="1" y="1" width="30" height="30" rx="9" fill="url(#chutesGrad)" />
+  <path d="M21 10.2c-1.1-1-2.6-1.7-4.3-1.7-3.6 0-6.5 2.9-6.5 6.5s2.9 6.5 6.5 6.5c1.7 0 3.2-.6 4.3-1.7" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/>
+  <path d="M19.5 15h7" stroke="#fff" stroke-width="2.2" stroke-linecap="round" />
+  <text x="40" y="20.8" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="700" fill="#0f172a">Chutes AI</text>
+</svg>
