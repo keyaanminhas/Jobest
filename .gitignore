@@ -10,6 +10,8 @@ __pycache__/
 # Env and local state
 .env
 .env.local
+**/.env
+**/.env.local
 
 # Logs and temp
 *.log

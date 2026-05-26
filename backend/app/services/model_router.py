@@ -37,6 +37,14 @@ class ModelRouter:
                 return value.strip()
         return ""
 
+    @staticmethod
+    def _provider_model_env(provider: str) -> str:
+        return {
+            "nvidia": "NVIDIA_MODEL",
+            "openrouter": "OPENROUTER_MODEL",
+            "chutes": "CHUTES_MODEL",
+        }.get(provider, "")
+
     @classmethod
     def from_env(cls) -> "ModelRouter":
         mode = os.getenv("LLM_MODE", "mock").strip().lower()
@@ -98,14 +106,22 @@ class ModelRouter:
             provider=primary_provider,
             base_url=primary_base_url,
             api_key=primary_api_key,
-            model=os.getenv("LLM_MODEL", "meta/llama-3.1-70b-instruct"),
+            model=cls._first_nonempty(
+                os.getenv("LLM_MODEL", ""),
+                os.getenv(cls._provider_model_env(primary_provider), ""),
+                "meta/llama-3.1-70b-instruct",
+            ),
         )
 
         fallback = ProviderConfig(
             provider=fallback_provider,
             base_url=fallback_base_url,
             api_key=fallback_api_key,
-            model=os.getenv("FALLBACK_MODEL", "meta/llama-3.1-70b-instruct"),
+            model=cls._first_nonempty(
+                os.getenv("FALLBACK_MODEL", ""),
+                os.getenv(cls._provider_model_env(fallback_provider), ""),
+                "meta/llama-3.1-70b-instruct",
+            ),
         )
 
         allow_fallback = os.getenv("ALLOW_PROVIDER_FALLBACK", "true").strip().lower() == "true"

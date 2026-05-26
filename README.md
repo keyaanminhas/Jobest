@@ -155,6 +155,30 @@ Notes:
 - If you want live model calls, switch `LLM_MODE=live` and provide real provider keys.
 - `jobest.db` is already included for demo/testing convenience in this repo state.
 
+### Chutes API support
+
+Jobest supports Chutes as an OpenAI-compatible LLM provider.
+
+Example backend `.env` values:
+
+```env
+LLM_MODE=live
+LLM_PROVIDER=chutes
+LLM_BASE_URL=https://llm.chutes.ai/v1
+LLM_API_KEY=your_chutes_api_key
+LLM_MODEL=deepseek-ai/DeepSeek-V3.2-TEE
+ALLOW_PROVIDER_FALLBACK=false
+USE_MOCK_LLM=false
+```
+
+You can also use provider-specific variables:
+
+```env
+CHUTES_BASE_URL=https://llm.chutes.ai/v1
+CHUTES_API_KEY=your_chutes_api_key
+CHUTES_MODEL=deepseek-ai/DeepSeek-V3.2-TEE
+```
+
 Run the backend:
 
 ```bash
