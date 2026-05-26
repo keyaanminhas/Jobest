@@ -27,6 +27,24 @@ const navItems = [
   { href: "/reports", label: "Reports", icon: ChartColumnBig },
 ];
 
+function isNavItemActive(pathname: string, href: string) {
+  if (href === "/jobs") {
+    return pathname === "/jobs";
+  }
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
+
+function formatMalaysiaNotificationTime(value: string) {
+  const normalizedValue =
+    /(?:Z|[+-]\d{2}:\d{2})$/.test(value) ? value : `${value}Z`;
+  return new Intl.DateTimeFormat("en-MY", {
+    timeZone: "Asia/Kuala_Lumpur",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).format(new Date(normalizedValue));
+}
+
 function initialsFromName(name: string) {
   return name
     .split(" ")
@@ -157,7 +175,7 @@ export function AppShell({
           <nav className="mt-6 space-y-1">
             {navItems.map((item) => {
               const Icon = item.icon;
-              const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+              const active = isNavItemActive(pathname, item.href);
               return (
                 <Link
                   key={item.href}
@@ -307,7 +325,7 @@ export function AppShell({
                           >
                             <div className="flex items-center justify-between gap-3">
                               <div className="text-sm font-semibold text-slate-900">{item.title}</div>
-                              <div className="text-[10px] text-slate-500">{new Date(item.created_at).toLocaleTimeString()}</div>
+                              <div className="text-[10px] text-slate-500">{formatMalaysiaNotificationTime(item.created_at)}</div>
                             </div>
                             <p className="mt-1 text-xs text-slate-600">{item.body}</p>
                           </Link>
