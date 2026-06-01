@@ -23,6 +23,30 @@ class User(Base):
 
     job_postings: Mapped[list["JobPosting"]] = relationship(back_populates="owner")
     notifications: Mapped[list["Notification"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    agent_settings: Mapped["UserAgentSettings"] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+        uselist=False,
+    )
+
+
+class UserAgentSettings(Base):
+    __tablename__ = "user_agent_settings"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), unique=True, index=True)
+    provider: Mapped[str] = mapped_column(String(64), default="chutes")
+    base_url: Mapped[str] = mapped_column(Text, default="https://llm.chutes.ai/v1")
+    model: Mapped[str] = mapped_column(String(255), default="Qwen/Qwen2.5-Coder-32B-Instruct-TEE")
+    encrypted_api_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    api_key_last4: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    parallel_agents_limit: Mapped[int] = mapped_column(default=1)
+    retry_attempts: Mapped[int] = mapped_column(default=0)
+    retry_delay_seconds: Mapped[int] = mapped_column(default=30)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    user: Mapped["User"] = relationship(back_populates="agent_settings")
 
 
 class JobPosting(Base):
@@ -112,6 +136,17 @@ class CandidateAnalysisRun(Base):
     final_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     recommendation: Mapped[str | None] = mapped_column(String(64), nullable=True)
     report_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    requested_by_user_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    attempt_count: Mapped[int] = mapped_column(default=0)
+    max_attempts: Mapped[int] = mapped_column(default=0)
+    retry_delay_seconds: Mapped[int] = mapped_column(default=30)
+    current_stage_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    current_stage_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    progress_percent: Mapped[float] = mapped_column(Float, default=0.0)
+    provider_used: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    model_used: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    key_label_used: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    worker_slot_index: Mapped[int | None] = mapped_column(nullable=True)
 
     candidate: Mapped[Candidate] = relationship(back_populates="analysis_runs")
     stage_outputs: Mapped[list["CandidateStageOutput"]] = relationship(

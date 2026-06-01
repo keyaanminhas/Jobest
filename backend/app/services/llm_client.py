@@ -55,12 +55,14 @@ class LLMClient:
         system_prompt: str,
         user_payload: dict,
         temperature: float = 0.2,
+        provider_override: ProviderConfig | None = None,
     ) -> dict:
         result, meta = await self.call_agent_with_meta(
             agent_name=agent_name,
             system_prompt=system_prompt,
             user_payload=user_payload,
             temperature=temperature,
+            provider_override=provider_override,
         )
         self._last_meta_by_agent[agent_name] = meta
         return result
@@ -71,9 +73,10 @@ class LLMClient:
         system_prompt: str,
         user_payload: dict,
         temperature: float = 0.2,
+        provider_override: ProviderConfig | None = None,
     ) -> tuple[dict, dict[str, Any]]:
         mode = self.router.llm_mode
-        primary = self._select_provider_for_agent(agent_name)
+        primary = provider_override or self._select_provider_for_agent(agent_name)
         cache_key = self.cache.make_cache_key(
             agent_name=agent_name,
             model=primary.model,

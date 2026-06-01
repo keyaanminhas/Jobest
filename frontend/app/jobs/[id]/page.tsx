@@ -2,7 +2,7 @@
 
 import { AppShell } from "@/components/app-shell";
 import { Panel, RecommendationBadge, ScoreRing } from "@/components/ui";
-import { getJobPosting, listCandidates, uploadCandidates } from "@/lib/api";
+import { deleteCandidate, getJobPosting, listCandidates, uploadCandidates } from "@/lib/api";
 import { CandidateListItem, JobPostingRecord } from "@/lib/types";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -68,6 +68,18 @@ export default function JobPostingDetailPage() {
     });
   }
 
+  function removeCandidate(candidateId: string) {
+    setError("");
+    startTransition(async () => {
+      try {
+        await deleteCandidate(jobId, candidateId);
+        await loadRows();
+      } catch (requestError) {
+        setError(requestError instanceof Error ? requestError.message : "Failed deleting candidate.");
+      }
+    });
+  }
+
   return (
     <AppShell
       title={posting?.title ?? "Job posting"}
@@ -123,7 +135,7 @@ export default function JobPostingDetailPage() {
       <Panel title="Candidates ranked by current score" subtitle="Candidates auto-rerank from triage score (0-80) to final analysis score (0-100) as runs complete.">
         <div className="space-y-3">
           {candidates.map((candidate, index) => (
-            <div key={candidate.id} className="grid gap-3 rounded-xl border border-slate-200 px-4 py-3 lg:grid-cols-[56px_1.2fr_1fr_130px_140px_170px] lg:items-center">
+            <div key={candidate.id} className="grid gap-3 rounded-xl border border-slate-200 px-4 py-3 lg:grid-cols-[56px_1.3fr_1fr_130px_150px_240px] lg:items-center">
               <div className="grid h-9 w-9 place-items-center rounded-full bg-slate-100 font-semibold text-slate-700">{index + 1}</div>
               <div>
                 <div className="font-semibold text-slate-900">{candidate.display_name}</div>
@@ -134,18 +146,21 @@ export default function JobPostingDetailPage() {
                 <ScoreRing score={candidate.current_score_type === "triage" ? (candidate.current_score / 80) * 100 : candidate.current_score} />
               </div>
               <div>{candidate.recommendation ? <RecommendationBadge recommendation={candidate.recommendation} /> : <span className="text-xs text-slate-500">Pending</span>}</div>
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap items-center justify-end gap-2">
                 <Link
                   href={`/candidates?jobId=${candidate.job_posting_id}&job=${encodeURIComponent(candidate.job_posting_title)}`}
-                  className="rounded-lg border border-accent px-3 py-1.5 text-xs font-semibold text-accent"
+                  className="inline-flex min-w-[110px] items-center justify-center rounded-lg border border-accent px-3 py-2 text-xs font-semibold text-accent transition-colors hover:bg-blue-50"
                 >
-                  Open candidates
+                  Open
                 </Link>
-                {candidate.report_ready ? (
-                  <Link href={`/candidates/${candidate.id}/report`} className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-white">
-                    View report
-                  </Link>
-                ) : null}
+                <button
+                  type="button"
+                  onClick={() => removeCandidate(candidate.id)}
+                  disabled={pending}
+                  className="inline-flex min-w-[110px] items-center justify-center rounded-lg border border-red-200 px-3 py-2 text-xs font-semibold text-red-700 transition-colors hover:bg-red-50 disabled:opacity-60"
+                >
+                  Delete
+                </button>
               </div>
             </div>
           ))}

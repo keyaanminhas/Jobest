@@ -17,7 +17,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.db import SessionLocal, get_db_session
+from app.db import SessionLocal, get_db_session, init_db_schema
 from app.deps import get_current_user
 from app.models import (
     Candidate,
@@ -29,10 +29,13 @@ from app.models import (
     CandidateTriage,
     JobPosting,
     JobPostingSkill,
+    UserAgentSettings,
     User,
 )
 from app.schemas.org import (
+    AgentSettingsResponse,
     AnalysisQueueStatusResponse,
+    AgentsStatusResponse,
     AuthResponse,
     CandidateAnalysisResponse,
     CandidateAnalysisStage,
@@ -47,14 +50,17 @@ from app.schemas.org import (
     LoginRequest,
     NotificationItemResponse,
     NotificationListResponse,
+    RunningAgentItemResponse,
     SignupRequest,
     StartCandidateAnalysisResponse,
+    UpdateAgentSettingsRequest,
     UpdateJobPostingRequest,
     UploadCandidatesResponse,
 )
 from app.security import create_access_token, hash_password, verify_password
 from app.services.analysis_queue import analysis_queue_manager
 from app.services.llm_client import LLMClient
+from app.services.model_router import ProviderConfig
 from app.services.orchestrator import PipelineOrchestrator
 from app.services.resume_ingestion import (
     ResumeIngestionError,
@@ -64,6 +70,7 @@ from app.services.resume_ingestion import (
     extract_professional_urls_from_pdf,
 )
 from app.services.triage_service import score_candidate_triage
+from app.services.secret_crypto import decrypt_secret, encrypt_secret
 
 router = APIRouter(prefix="/api", tags=["org"])
 UPLOADS_DIR = Path(__file__).resolve().parents[1] / "storage" / "uploads"
@@ -126,6 +133,19 @@ def _analysis_timeout_seconds() -> float:
     except ValueError:
         return 900.0
     return max(60.0, value)
+
+
+def _normalize_positive_int(value: int, *, min_value: int, max_value: int) -> int:
+    return max(min_value, min(max_value, int(value)))
+
+
+def _mask_api_key(value: str | None) -> str | None:
+    if not value:
+        return None
+    trimmed = value.strip()
+    if len(trimmed) <= 4:
+        return "*" * len(trimmed)
+    return f"{'*' * (len(trimmed) - 4)}{trimmed[-4:]}"
 
 
 def _pkce_challenge(verifier: str) -> str:
@@ -442,6 +462,105 @@ async def _get_owned_candidate_or_404(db: AsyncSession, user_id: str, candidate_
     return candidate
 
 
+async def _get_or_create_agent_settings(db: AsyncSession, user_id: str) -> UserAgentSettings:
+    settings = await db.scalar(select(UserAgentSettings).where(UserAgentSettings.user_id == user_id))
+    if settings is not None:
+        return settings
+    settings = UserAgentSettings(user_id=user_id)
+    db.add(settings)
+    await db.commit()
+    await db.refresh(settings)
+    return settings
+
+
+def _settings_to_response(settings: UserAgentSettings) -> AgentSettingsResponse:
+    return AgentSettingsResponse(
+        provider=settings.provider,
+        base_url=settings.base_url,
+        model=settings.model,
+        api_key_label=_mask_api_key(settings.api_key_last4),
+        parallel_agents_limit=settings.parallel_agents_limit,
+        retry_attempts=settings.retry_attempts,
+        retry_delay_seconds=settings.retry_delay_seconds,
+    )
+
+
+async def _parallel_limit_for_user(user_id: str) -> int:
+    async with SessionLocal() as db:
+        settings = await db.scalar(select(UserAgentSettings).where(UserAgentSettings.user_id == user_id))
+        if settings is None:
+            return 1
+        return _normalize_positive_int(settings.parallel_agents_limit, min_value=1, max_value=10)
+
+
+def _provider_from_settings(settings: UserAgentSettings) -> ProviderConfig | None:
+    if not settings.encrypted_api_key:
+        return None
+    try:
+        api_key = decrypt_secret(settings.encrypted_api_key)
+    except Exception:
+        return None
+    if not api_key.strip():
+        return None
+    return ProviderConfig(
+        provider=settings.provider or "chutes",
+        base_url=settings.base_url or "https://llm.chutes.ai/v1",
+        api_key=api_key.strip(),
+        model=settings.model or "Qwen/Qwen2.5-Coder-32B-Instruct-TEE",
+    )
+
+
+def _discover_local_chutes_api_key() -> str | None:
+    env_candidates = [
+        os.getenv("CHUTES_API_KEY", "").strip(),
+        os.getenv("LLM_API_KEY", "").strip(),
+    ]
+    for value in env_candidates:
+        if value and value.lower() not in {"your_key_here", "your_chutes_api_key", "change-this-demo-key"}:
+            return value
+
+    env_file = Path(__file__).resolve().parents[2] / ".env"
+    if not env_file.exists():
+        return None
+    text = env_file.read_text(encoding="utf-8", errors="ignore")
+    for key in ("CHUTES_API_KEY", "LLM_API_KEY"):
+        match = re.search(rf"^{key}=(.*)$", text, re.MULTILINE)
+        if not match:
+            continue
+        value = match.group(1).strip()
+        if value and value.lower() not in {"your_key_here", "your_chutes_api_key", "change-this-demo-key"}:
+            return value
+    return None
+
+
+async def _seed_keyaan_accounts_if_possible() -> None:
+    local_key = _discover_local_chutes_api_key()
+    if not local_key:
+        return
+    try:
+        encrypted = encrypt_secret(local_key)
+    except Exception:
+        return
+    async with SessionLocal() as db:
+        users = (
+            await db.scalars(select(User).where(User.full_name == "Keyaan Minhas"))
+        ).all()
+        if not users:
+            return
+        for user in users:
+            settings = await db.scalar(select(UserAgentSettings).where(UserAgentSettings.user_id == user.id))
+            if settings is None:
+                settings = UserAgentSettings(user_id=user.id)
+                db.add(settings)
+            settings.provider = "chutes"
+            settings.base_url = "https://llm.chutes.ai/v1"
+            settings.model = settings.model or "Qwen/Qwen2.5-Coder-32B-Instruct-TEE"
+            settings.encrypted_api_key = encrypted
+            settings.api_key_last4 = local_key[-4:]
+            settings.parallel_agents_limit = _normalize_positive_int(settings.parallel_agents_limit, min_value=1, max_value=10)
+        await db.commit()
+
+
 async def _recover_stale_analysis_runs_on_startup() -> int:
     recovered = 0
     async with SessionLocal() as db:
@@ -511,8 +630,10 @@ async def _recover_stale_analysis_runs_on_startup() -> int:
 
 @router.on_event("startup")
 async def startup_analysis_queue() -> None:
+    await init_db_schema()
+    await _seed_keyaan_accounts_if_possible()
     await _recover_stale_analysis_runs_on_startup()
-    await analysis_queue_manager.start(_run_candidate_analysis_background)
+    await analysis_queue_manager.start(_run_candidate_analysis_background, _parallel_limit_for_user)
 
 
 @router.on_event("shutdown")
@@ -899,6 +1020,24 @@ async def list_candidates_for_posting(
     return [_candidate_to_list_item(item) for item in candidates]
 
 
+@router.delete("/job-postings/{job_posting_id}/candidates/{candidate_id}")
+async def delete_candidate_from_posting(
+    job_posting_id: str,
+    candidate_id: str,
+    db: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    posting = await _get_owned_posting_or_404(db, current_user.id, job_posting_id)
+    candidate = await db.scalar(
+        select(Candidate).where(Candidate.id == candidate_id, Candidate.job_posting_id == posting.id)
+    )
+    if candidate is None:
+        raise HTTPException(status_code=404, detail="Candidate not found in this posting")
+    await db.delete(candidate)
+    await db.commit()
+    return {"deleted": True}
+
+
 @router.get("/candidates", response_model=list[CandidateListItemResponse])
 async def list_candidates_for_user(
     db: AsyncSession = Depends(get_db_session),
@@ -1020,6 +1159,135 @@ async def mark_all_notifications_read(
     return {"ok": True, "updated": len(rows)}
 
 
+@router.get("/agent-settings", response_model=AgentSettingsResponse)
+async def get_agent_settings(
+    db: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+) -> AgentSettingsResponse:
+    settings = await _get_or_create_agent_settings(db, current_user.id)
+    return _settings_to_response(settings)
+
+
+@router.put("/agent-settings", response_model=AgentSettingsResponse)
+async def update_agent_settings(
+    payload: UpdateAgentSettingsRequest,
+    db: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+) -> AgentSettingsResponse:
+    settings = await _get_or_create_agent_settings(db, current_user.id)
+    settings.provider = (payload.provider or "chutes").strip().lower()
+    settings.base_url = payload.base_url.strip()
+    settings.model = payload.model.strip()
+    settings.parallel_agents_limit = _normalize_positive_int(payload.parallel_agents_limit, min_value=1, max_value=10)
+    settings.retry_attempts = _normalize_positive_int(payload.retry_attempts, min_value=0, max_value=5)
+    settings.retry_delay_seconds = _normalize_positive_int(payload.retry_delay_seconds, min_value=0, max_value=600)
+
+    api_key = (payload.api_key or "").strip()
+    if api_key:
+        settings.encrypted_api_key = encrypt_secret(api_key)
+        settings.api_key_last4 = api_key[-4:]
+
+    await db.commit()
+    await db.refresh(settings)
+    return _settings_to_response(settings)
+
+
+@router.get("/agent-settings/models")
+async def get_agent_models(
+    db: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    settings = await _get_or_create_agent_settings(db, current_user.id)
+    provider = _provider_from_settings(settings)
+    if provider is None:
+        return {"models": [], "fetch_status": "missing_key", "fetch_error": "No API key configured for this account."}
+
+    url = provider.base_url.rstrip("/") + "/models"
+    headers = {"Authorization": f"Bearer {provider.api_key}"}
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            response = await client.get(url, headers=headers)
+        response.raise_for_status()
+        payload = response.json()
+        models_raw = payload.get("data", []) if isinstance(payload, dict) else []
+        models = [str(item.get("id", "")).strip() for item in models_raw if isinstance(item, dict) and item.get("id")]
+        return {"models": sorted(set(models)), "fetch_status": "ok", "fetch_error": None}
+    except Exception as exc:
+        return {"models": [], "fetch_status": "error", "fetch_error": str(exc)}
+
+
+@router.get("/agents/status", response_model=AgentsStatusResponse)
+async def get_agents_status(
+    db: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+) -> AgentsStatusResponse:
+    active_items = await analysis_queue_manager.list_active_user_runs(current_user.id)
+    queued_items = await analysis_queue_manager.list_queued_user_runs(current_user.id)
+    if not active_items and not queued_items:
+        return AgentsStatusResponse(active_agents=0, running=[], queued=[])
+
+    run_ids = [item.analysis_run_id for item in active_items] + [item.analysis_run_id for item in queued_items]
+    runs = (
+        await db.scalars(
+            select(CandidateAnalysisRun)
+            .where(CandidateAnalysisRun.id.in_(run_ids))
+            .options(selectinload(CandidateAnalysisRun.candidate).selectinload(Candidate.job_posting))
+        )
+    ).all()
+    by_id = {run.id: run for run in runs}
+    running: list[RunningAgentItemResponse] = []
+    queued: list[RunningAgentItemResponse] = []
+    for item in active_items:
+        run = by_id.get(item.analysis_run_id)
+        if run is None or run.candidate is None:
+            continue
+        running.append(
+            RunningAgentItemResponse(
+                analysis_run_id=run.id,
+                candidate_id=run.candidate.id,
+                candidate_name=run.candidate.display_name,
+                job_posting_id=run.candidate.job_posting_id,
+                job_posting_title=run.candidate.job_posting.title if run.candidate.job_posting else None,
+                status=run.status,
+                current_stage=run.current_stage_name,
+                stage_summary=run.current_stage_summary,
+                progress_percent=run.progress_percent or 0.0,
+                provider_used=run.provider_used,
+                model_used=run.model_used,
+                key_label_used=run.key_label_used,
+                worker_slot_index=run.worker_slot_index,
+                attempt_count=run.attempt_count,
+                max_attempts=run.max_attempts,
+            )
+        )
+    running.sort(key=lambda row: (row.worker_slot_index or 999, row.candidate_name.lower()))
+    for item in queued_items:
+        run = by_id.get(item.analysis_run_id)
+        if run is None or run.candidate is None:
+            continue
+        queued.append(
+            RunningAgentItemResponse(
+                analysis_run_id=run.id,
+                candidate_id=run.candidate.id,
+                candidate_name=run.candidate.display_name,
+                job_posting_id=run.candidate.job_posting_id,
+                job_posting_title=run.candidate.job_posting.title if run.candidate.job_posting else None,
+                status=run.status,
+                current_stage=run.current_stage_name,
+                stage_summary=run.current_stage_summary,
+                progress_percent=run.progress_percent or 0.0,
+                provider_used=run.provider_used,
+                model_used=run.model_used,
+                key_label_used=run.key_label_used,
+                worker_slot_index=None,
+                attempt_count=run.attempt_count,
+                max_attempts=run.max_attempts,
+            )
+        )
+    queued.sort(key=lambda row: row.candidate_name.lower())
+    return AgentsStatusResponse(active_agents=len(running), running=running, queued=queued)
+
+
 @router.get("/analysis-queue", response_model=AnalysisQueueStatusResponse)
 async def get_analysis_queue_status(
     db: AsyncSession = Depends(get_db_session),
@@ -1032,6 +1300,7 @@ async def get_analysis_queue_status(
         return AnalysisQueueStatusResponse(
             queue_size_total=snapshot["queue_size_total"],
             queue_size_user=snapshot["queue_size_user"],
+            active_agents=snapshot.get("active_user_count", 0),
         )
 
     candidate = await db.scalar(
@@ -1057,6 +1326,7 @@ async def get_analysis_queue_status(
             current_status=run.status if run else "processing",
             current_stage=current_stage,
             current_progress_percent=progress,
+            active_agents=snapshot.get("active_user_count", 0),
         )
 
     return AnalysisQueueStatusResponse(
@@ -1070,6 +1340,7 @@ async def get_analysis_queue_status(
         current_status=run.status if run else candidate.analysis_status,
         current_stage=current_stage,
         current_progress_percent=progress,
+        active_agents=snapshot.get("active_user_count", 0),
     )
 
 
@@ -1090,7 +1361,7 @@ async def stream_candidate_resume(
     )
 
 
-async def _run_candidate_analysis_background(candidate_id: str, analysis_run_id: str) -> None:
+async def _run_candidate_analysis_background(candidate_id: str, analysis_run_id: str, worker_slot_index: int) -> None:
     async with SessionLocal() as db:
         candidate = await db.scalar(
             select(Candidate)
@@ -1106,11 +1377,6 @@ async def _run_candidate_analysis_background(candidate_id: str, analysis_run_id:
         run = await db.scalar(select(CandidateAnalysisRun).where(CandidateAnalysisRun.id == analysis_run_id))
         if run is None:
             return
-
-        candidate.analysis_status = "processing"
-        run.status = "processing"
-        run.started_at = datetime.utcnow()
-        await db.commit()
 
         posting = candidate.job_posting
         if posting is None:
@@ -1134,75 +1400,144 @@ async def _run_candidate_analysis_background(candidate_id: str, analysis_run_id:
         nice_to_have = [item.skill_name for item in posting.skills if item.skill_type == "nice_to_have"]
         links = _candidate_links_map(candidate.links)
 
-        run_data = {
-            "id": analysis_run_id,
-            "title": posting.title,
-            "job_description": posting.job_description,
-            "hiring_context": posting.hiring_context,
-            "company_priority": posting.company_priority or "",
-            "must_have_skills": must_have,
-            "nice_to_have_skills": nice_to_have,
-            "candidates": [
-                {
-                    "name": candidate.display_name,
-                    "resume_text": candidate.resume_text,
-                    "professional_links": links,
-                }
-            ],
-        }
+        settings = await _get_or_create_agent_settings(db, candidate.uploaded_by_user_id)
+        provider_override = _provider_from_settings(settings)
+        attempt = 0
+        max_attempts = max(0, int(run.max_attempts or 0))
 
-        stage_snapshots: dict[str, str] = {}
+        while True:
+            attempt += 1
+            run.attempt_count = attempt
+            run.worker_slot_index = worker_slot_index
+            run.status = "processing"
+            run.started_at = run.started_at or datetime.utcnow()
+            run.provider_used = provider_override.provider if provider_override else _triage_llm_client.router.primary.provider
+            run.model_used = provider_override.model if provider_override else _triage_llm_client.router.primary.model
+            run.key_label_used = f"***{settings.api_key_last4}" if settings.api_key_last4 else None
+            candidate.analysis_status = "processing"
 
-        async def progress_callback(pipeline: list[dict], _: list[dict]) -> None:
-            for item in pipeline:
-                stage_name = item.get("stage", "")
-                status = item.get("status", "completed")
-                summary = item.get("summary", "")
-                raw_output = item.get("raw_output", {})
-                snapshot = json.dumps(
-                    {
-                        "status": status,
-                        "summary": summary,
-                        "raw_output": raw_output,
-                    },
-                    ensure_ascii=True,
-                    sort_keys=True,
-                )
-                if stage_snapshots.get(stage_name) == snapshot:
-                    continue
-
-                existing = await db.scalar(
-                    select(CandidateStageOutput)
-                    .where(
-                        CandidateStageOutput.analysis_run_id == analysis_run_id,
-                        CandidateStageOutput.stage_name == stage_name,
-                    )
-                    .order_by(CandidateStageOutput.created_at.desc(), CandidateStageOutput.id.desc())
-                )
-
-                if existing is None:
-                    db.add(
-                        CandidateStageOutput(
-                            analysis_run_id=analysis_run_id,
-                            stage_name=stage_name,
-                            status=status,
-                            summary=summary,
-                            raw_output_json=raw_output,
-                        )
-                    )
-                else:
-                    existing.status = status
-                    existing.summary = summary
-                    existing.raw_output_json = raw_output
-
-                stage_snapshots[stage_name] = snapshot
+            await db.execute(delete(CandidateStageOutput).where(CandidateStageOutput.analysis_run_id == analysis_run_id))
             await db.commit()
 
-        try:
-            results = await asyncio.wait_for(
-                _orchestrator.run_pipeline(run_data, progress_callback=progress_callback),
-                timeout=_analysis_timeout_seconds(),
-            )
+            run_data = {
+                "id": analysis_run_id,
+                "title": posting.title,
+                "job_description": posting.job_description,
+                "hiring_context": posting.hiring_context,
+                "company_priority": posting.company_priority or "",
+                "must_have_skills": must_have,
+                "nice_to_have_skills": nice_to_have,
+                "candidates": [
+                    {
+                        "name": candidate.display_name,
+                        "resume_text": candidate.resume_text,
+                        "professional_links": links,
+                    }
+                ],
+            }
+            stage_snapshots: dict[str, str] = {}
+
+            async def progress_callback(pipeline: list[dict], _: list[dict]) -> None:
+                for item in pipeline:
+                    stage_name = item.get("stage", "")
+                    status = item.get("status", "completed")
+                    summary = item.get("summary", "")
+                    raw_output = item.get("raw_output", {})
+                    snapshot = json.dumps(
+                        {
+                            "status": status,
+                            "summary": summary,
+                            "raw_output": raw_output,
+                        },
+                        ensure_ascii=True,
+                        sort_keys=True,
+                    )
+                    if stage_snapshots.get(stage_name) == snapshot:
+                        continue
+                    existing = await db.scalar(
+                        select(CandidateStageOutput)
+                        .where(
+                            CandidateStageOutput.analysis_run_id == analysis_run_id,
+                            CandidateStageOutput.stage_name == stage_name,
+                        )
+                        .order_by(CandidateStageOutput.created_at.desc(), CandidateStageOutput.id.desc())
+                    )
+                    if existing is None:
+                        db.add(
+                            CandidateStageOutput(
+                                analysis_run_id=analysis_run_id,
+                                stage_name=stage_name,
+                                status=status,
+                                summary=summary,
+                                raw_output_json=raw_output,
+                            )
+                        )
+                    else:
+                        existing.status = status
+                        existing.summary = summary
+                        existing.raw_output_json = raw_output
+                    stage_snapshots[stage_name] = snapshot
+                    run.current_stage_name = stage_name
+                    run.current_stage_summary = summary
+                progress, stage_name = _progress_from_stage_rows(
+                    (
+                        await db.scalars(
+                            select(CandidateStageOutput)
+                            .where(CandidateStageOutput.analysis_run_id == analysis_run_id)
+                            .order_by(CandidateStageOutput.created_at.asc())
+                        )
+                    ).all()
+                )
+                run.progress_percent = progress
+                run.current_stage_name = stage_name or run.current_stage_name
+                await db.commit()
+
+            orchestrator = PipelineOrchestrator(provider_override=provider_override)
+            try:
+                results = await asyncio.wait_for(
+                    orchestrator.run_pipeline(run_data, progress_callback=progress_callback),
+                    timeout=_analysis_timeout_seconds(),
+                )
+            except Exception as exc:
+                if attempt <= max_attempts:
+                    run.status = "queued"
+                    candidate.analysis_status = "queued"
+                    run.current_stage_summary = f"Retry {attempt}/{max_attempts} scheduled: {exc}"
+                    run.worker_slot_index = None
+                    await db.commit()
+                    delay_seconds = max(0, int(run.retry_delay_seconds or 0))
+                    if delay_seconds > 0:
+                        await asyncio.sleep(delay_seconds)
+                    continue
+
+                run.status = "error"
+                run.completed_at = datetime.utcnow()
+                run.report_summary = str(exc)
+                run.worker_slot_index = None
+                candidate.analysis_status = "error"
+                db.add(
+                    CandidateStageOutput(
+                        analysis_run_id=analysis_run_id,
+                        stage_name="Pipeline",
+                        status="error",
+                        summary=f"Pipeline failed: {exc}",
+                        raw_output_json={"error": str(exc)},
+                    )
+                )
+                db.add(
+                    Notification(
+                        user_id=candidate.uploaded_by_user_id,
+                        title="Pipeline failed",
+                        body=f"{candidate.display_name} analysis failed for {posting.title}: {exc}",
+                        notification_type="pipeline_failed",
+                        candidate_id=candidate.id,
+                        analysis_run_id=analysis_run_id,
+                        is_read=False,
+                    )
+                )
+                await db.commit()
+                return
+
             chosen = (results.get("candidates") or [{}])[0]
             score = chosen.get("score", {})
             panel_review = chosen.get("panel_review", {})
@@ -1214,6 +1549,10 @@ async def _run_candidate_analysis_background(candidate_id: str, analysis_run_id:
             run.final_score = score.get("final_score")
             run.recommendation = score.get("recommendation")
             run.report_summary = results.get("report")
+            run.current_stage_name = "Final Shortlist Report Agent"
+            run.current_stage_summary = "Completed"
+            run.progress_percent = 100.0
+            run.worker_slot_index = None
             candidate.analysis_status = "completed"
             db.add(
                 Notification(
@@ -1251,64 +1590,7 @@ async def _run_candidate_analysis_background(candidate_id: str, analysis_run_id:
                 existing_output.interview_pack_json = interview_pack
 
             await db.commit()
-        except asyncio.TimeoutError:
-            run.status = "error"
-            run.completed_at = datetime.utcnow()
-            run.report_summary = "Analysis timed out before the pipeline could finish."
-            candidate.analysis_status = "error"
-            db.add(
-                CandidateStageOutput(
-                    analysis_run_id=analysis_run_id,
-                    stage_name="Pipeline",
-                    status="error",
-                    summary="Pipeline timed out before completion.",
-                    raw_output_json={
-                        "error": "analysis_timeout",
-                        "timeout_seconds": _analysis_timeout_seconds(),
-                    },
-                )
-            )
-            db.add(
-                Notification(
-                    user_id=candidate.uploaded_by_user_id,
-                    title="Pipeline timed out",
-                    body=(
-                        f"{candidate.display_name} analysis timed out for {posting.title} "
-                        "before the pipeline could finish."
-                    ),
-                    notification_type="pipeline_failed",
-                    candidate_id=candidate.id,
-                    analysis_run_id=analysis_run_id,
-                    is_read=False,
-                )
-            )
-            await db.commit()
-        except Exception as exc:
-            run.status = "error"
-            run.completed_at = datetime.utcnow()
-            run.report_summary = str(exc)
-            candidate.analysis_status = "error"
-            db.add(
-                CandidateStageOutput(
-                    analysis_run_id=analysis_run_id,
-                    stage_name="Pipeline",
-                    status="error",
-                    summary=f"Pipeline failed: {exc}",
-                    raw_output_json={"error": str(exc)},
-                )
-            )
-            db.add(
-                Notification(
-                    user_id=candidate.uploaded_by_user_id,
-                    title="Pipeline failed",
-                    body=f"{candidate.display_name} analysis failed for {posting.title}: {exc}",
-                    notification_type="pipeline_failed",
-                    candidate_id=candidate.id,
-                    analysis_run_id=analysis_run_id,
-                    is_read=False,
-                )
-            )
-            await db.commit()
+            return
 
 
 @router.post("/candidates/{candidate_id}/analyze", response_model=StartCandidateAnalysisResponse)
@@ -1318,6 +1600,7 @@ async def start_candidate_analysis(
     current_user: User = Depends(get_current_user),
 ) -> StartCandidateAnalysisResponse:
     candidate = await _get_owned_candidate_or_404(db, current_user.id, candidate_id)
+    settings = await _get_or_create_agent_settings(db, current_user.id)
 
     existing_active_run = await db.scalar(
         select(CandidateAnalysisRun)
@@ -1335,7 +1618,13 @@ async def start_candidate_analysis(
             queue_position=None,
         )
 
-    run = CandidateAnalysisRun(candidate_id=candidate.id, status="queued")
+    run = CandidateAnalysisRun(
+        candidate_id=candidate.id,
+        status="queued",
+        requested_by_user_id=current_user.id,
+        max_attempts=settings.retry_attempts,
+        retry_delay_seconds=settings.retry_delay_seconds,
+    )
     candidate.analysis_status = "queued"
     db.add(run)
     await db.commit()

@@ -11,9 +11,11 @@ import {
   LayoutDashboard,
   LogOut,
   Plus,
+  Settings,
   Search,
   Sparkles,
   Users,
+  Bot,
 } from "lucide-react";
 import { getCurrentUser, getNotifications, logout, markAllNotificationsRead, markNotificationRead } from "@/lib/api";
 import { NotificationItem } from "@/lib/types";
@@ -25,6 +27,8 @@ const navItems = [
   { href: "/jobs/new", label: "New Posting", icon: BriefcaseBusiness },
   { href: "/candidates", label: "Candidates", icon: Users },
   { href: "/reports", label: "Reports", icon: ChartColumnBig },
+  { href: "/agents", label: "Agents", icon: Bot },
+  { href: "/settings", label: "Settings", icon: Settings },
 ];
 
 function resolveTabTitle(pathname: string, pageTitle?: string) {
@@ -39,6 +43,8 @@ function resolveTabTitle(pathname: string, pageTitle?: string) {
   if (pathname.startsWith("/candidates/") && pathname.endsWith("/report")) return "Jobest | Candidate Report";
   if (pathname.startsWith("/candidates/")) return "Jobest | Candidate";
   if (pathname === "/reports") return "Jobest | Reports";
+  if (pathname === "/agents") return "Jobest | Agents";
+  if (pathname === "/settings") return "Jobest | Settings";
   if (pathname.startsWith("/runs/") && pathname.endsWith("/pipeline")) return "Jobest | Hiring Pipeline";
   if (pathname.startsWith("/runs/") && pathname.endsWith("/shortlist")) return "Jobest | Shortlist";
   if (pathname.startsWith("/runs/") && pathname.endsWith("/report")) return "Jobest | Hiring Report";
@@ -54,14 +60,21 @@ function isNavItemActive(pathname: string, href: string) {
 }
 
 function formatMalaysiaNotificationTime(value: string) {
+  if (!value) return "--";
   const normalizedValue =
     /(?:Z|[+-]\d{2}:\d{2})$/.test(value) ? value : `${value}Z`;
-  return new Intl.DateTimeFormat("en-MY", {
-    timeZone: "Asia/Kuala_Lumpur",
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  }).format(new Date(normalizedValue));
+  const parsed = new Date(normalizedValue);
+  if (Number.isNaN(parsed.getTime())) return "--";
+  try {
+    return new Intl.DateTimeFormat("en-MY", {
+      timeZone: "Asia/Kuala_Lumpur",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    }).format(parsed);
+  } catch {
+    return "--";
+  }
 }
 
 function initialsFromName(name: string) {

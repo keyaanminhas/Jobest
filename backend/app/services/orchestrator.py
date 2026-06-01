@@ -67,8 +67,9 @@ def _merge_profile_links(explicit_links: dict[str, str], inferred_links: list[st
 
 
 class PipelineOrchestrator:
-    def __init__(self, llm_client: LLMClient | None = None) -> None:
+    def __init__(self, llm_client: LLMClient | None = None, provider_override=None) -> None:
         self.llm_client = llm_client or LLMClient()
+        self.provider_override = provider_override
         self.prompts_dir = Path(__file__).resolve().parents[1] / "prompts"
         self.demo_dir = Path(__file__).resolve().parents[1] / "storage" / "demo"
 
@@ -100,7 +101,13 @@ class PipelineOrchestrator:
     ):
         prompt = self._prompt(agent_name)
         try:
-            data = await self.llm_client.call_agent(agent_name, prompt, payload, temperature=temperature)
+            data = await self.llm_client.call_agent(
+                agent_name,
+                prompt,
+                payload,
+                temperature=temperature,
+                provider_override=self.provider_override,
+            )
             meta = self.llm_client.get_last_call_meta(agent_name)
             model = schema_cls.model_validate(data)
             summary = f"source={meta.get('source','unknown')} provider={meta.get('provider','unknown')} repaired={meta.get('repaired', False)}"

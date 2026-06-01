@@ -2,8 +2,8 @@
 
 import { AppShell } from "@/components/app-shell";
 import { EmptyState, Panel } from "@/components/ui";
-import { listJobPostings } from "@/lib/api";
-import { JobPostingRecord } from "@/lib/types";
+import { listAllCandidates, listJobPostings, updateJobPosting } from "@/lib/api";
+import { CandidateListItem, JobPostingRecord } from "@/lib/types";
 import { BriefcaseBusiness, CalendarClock, Filter, ShieldCheck, Sparkles, Target } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
@@ -28,14 +28,16 @@ export default function CurrentPostingsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
+  const [allCandidates, setAllCandidates] = useState<CandidateListItem[]>([]);
 
   useEffect(() => {
     let cancelled = false;
     async function load() {
       try {
-        const data = await listJobPostings();
+        const [data, candidates] = await Promise.all([listJobPostings(), listAllCandidates()]);
         if (cancelled) return;
         setRows(data.postings);
+        setAllCandidates(candidates);
       } catch (requestError) {
         if (cancelled) return;
         setError(requestError instanceof Error ? requestError.message : "Failed loading job postings.");
@@ -70,6 +72,24 @@ export default function CurrentPostingsPage() {
       filtered: filtered.length,
     };
   }, [filtered.length, rows]);
+
+  const memberCountByPosting = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const item of allCandidates) {
+      counts[item.job_posting_id] = (counts[item.job_posting_id] || 0) + 1;
+    }
+    return counts;
+  }, [allCandidates]);
+
+  async function deactivatePosting(postingId: string) {
+    try {
+      await updateJobPosting(postingId, { status: "inactive" });
+      const data = await listJobPostings();
+      setRows(data.postings);
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Failed to deactivate posting.");
+    }
+  }
 
   return (
     <AppShell
@@ -183,12 +203,23 @@ export default function CurrentPostingsPage() {
                           </span>
                         </div>
                       </div>
-                      <Link
-                        href={`/jobs/${row.id}`}
-                        className="rounded-lg border border-accent px-3 py-1.5 text-xs font-semibold text-accent transition-colors hover:bg-blue-50"
-                      >
-                        Open posting
-                      </Link>
+                      <div className="flex items-center gap-2">
+                        <Link
+                          href={`/jobs/${row.id}`}
+                          className="rounded-lg border border-accent px-3 py-1.5 text-xs font-semibold text-accent transition-colors hover:bg-blue-50"
+                        >
+                          Open posting
+                        </Link>
+                        {open ? (
+                          <button
+                            type="button"
+                            onClick={() => void deactivatePosting(row.id)}
+                            className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-700 transition-colors hover:bg-red-50"
+                          >
+                            Deactivate
+                          </button>
+                        ) : null}
+                      </div>
                     </div>
 
                     <p className="line-clamp-3 text-sm leading-6 text-slate-600">{row.job_description}</p>
@@ -226,7 +257,12 @@ export default function CurrentPostingsPage() {
                         <CalendarClock className="h-3.5 w-3.5" />
                         Created {formatDate(row.created_at)}
                       </div>
-                      <div>Updated {formatDate(row.updated_at)}</div>
+                      <div className="flex items-center gap-3">
+                        <span>Updated {formatDate(row.updated_at)}</span>
+                        <span className="rounded-full bg-slate-100 px-2 py-0.5 font-semibold text-slate-700">
+                          Members {memberCountByPosting[row.id] || 0}
+                        </span>
+                      </div>
                     </div>
                   </div>
                 );

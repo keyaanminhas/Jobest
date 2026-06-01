@@ -4,6 +4,9 @@ import { demoRun, demoRunId } from "@/lib/demo-data";
 import { clearAuthToken, getAuthToken, setAuthToken } from "@/lib/session";
 import { getRunLocal, saveRunLocal } from "@/lib/storage";
 import {
+  AgentModelsResponse,
+  AgentSettings,
+  AgentsStatus,
   AnalysisQueueStatus,
   AuthResponse,
   CandidateAnalysisResponse,
@@ -19,6 +22,7 @@ import {
   JobPostingRecord,
   NotificationListResponse,
   SingleCvRunResponse,
+  UpdateAgentSettingsPayload,
 } from "@/lib/types";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000";
@@ -134,6 +138,13 @@ export async function getJobPosting(jobPostingId: string) {
   return requestOrg<JobPostingRecord>(`/api/job-postings/${jobPostingId}`);
 }
 
+export async function updateJobPosting(jobPostingId: string, payload: Partial<CreateJobPostingPayload> & { status?: string }) {
+  return requestOrg<JobPostingRecord>(`/api/job-postings/${jobPostingId}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function deleteJobPosting(jobPostingId: string) {
   return requestOrg<{ deleted: boolean }>(`/api/job-postings/${jobPostingId}`, {
     method: "DELETE",
@@ -142,6 +153,12 @@ export async function deleteJobPosting(jobPostingId: string) {
 
 export async function listCandidates(jobPostingId: string) {
   return requestOrg<CandidateListItem[]>(`/api/job-postings/${jobPostingId}/candidates`);
+}
+
+export async function deleteCandidate(jobPostingId: string, candidateId: string) {
+  return requestOrg<{ deleted: boolean }>(`/api/job-postings/${jobPostingId}/candidates/${candidateId}`, {
+    method: "DELETE",
+  });
 }
 
 export async function uploadCandidates(
@@ -226,6 +243,25 @@ export async function markAllNotificationsRead() {
   return requestOrg<{ ok: boolean; updated: number }>("/api/notifications/read-all", {
     method: "POST",
   });
+}
+
+export async function getAgentSettings() {
+  return requestOrg<AgentSettings>("/api/agent-settings");
+}
+
+export async function updateAgentSettings(payload: UpdateAgentSettingsPayload) {
+  return requestOrg<AgentSettings>("/api/agent-settings", {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getAgentModels() {
+  return requestOrg<AgentModelsResponse>("/api/agent-settings/models");
+}
+
+export async function getAgentsStatus() {
+  return requestOrg<AgentsStatus>("/api/agents/status");
 }
 
 export function toApiUrl(path: string) {

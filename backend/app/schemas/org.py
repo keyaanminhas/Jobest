@@ -170,6 +170,51 @@ class AnalysisQueueStatusResponse(BaseModel):
     current_status: str | None = None
     current_stage: str | None = None
     current_progress_percent: float = 0.0
+    active_agents: int = 0
+
+
+class AgentSettingsResponse(BaseModel):
+    provider: str
+    base_url: str
+    model: str
+    api_key_label: str | None = None
+    parallel_agents_limit: int
+    retry_attempts: int
+    retry_delay_seconds: int
+
+
+class UpdateAgentSettingsRequest(BaseModel):
+    provider: str = "chutes"
+    base_url: str
+    model: str
+    api_key: str | None = None
+    parallel_agents_limit: int = Field(ge=1, le=10, default=1)
+    retry_attempts: int = Field(ge=0, le=5, default=0)
+    retry_delay_seconds: int = Field(ge=0, le=600, default=30)
+
+
+class RunningAgentItemResponse(BaseModel):
+    analysis_run_id: str
+    candidate_id: str
+    candidate_name: str
+    job_posting_id: str
+    job_posting_title: str | None = None
+    status: str
+    current_stage: str | None = None
+    stage_summary: str | None = None
+    progress_percent: float = 0.0
+    provider_used: str | None = None
+    model_used: str | None = None
+    key_label_used: str | None = None
+    worker_slot_index: int | None = None
+    attempt_count: int = 0
+    max_attempts: int = 0
+
+
+class AgentsStatusResponse(BaseModel):
+    active_agents: int = 0
+    running: list[RunningAgentItemResponse] = Field(default_factory=list)
+    queued: list[RunningAgentItemResponse] = Field(default_factory=list)
 
 
 class NotificationItemResponse(BaseModel):

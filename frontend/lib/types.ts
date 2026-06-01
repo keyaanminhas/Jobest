@@ -403,3 +403,53 @@ export type NotificationListResponse = {
   items: NotificationItem[];
   unread_count: number;
 };
+
+export type AgentSettings = {
+  provider: string;
+  base_url: string;
+  model: string;
+  api_key_label?: string | null;
+  parallel_agents_limit: number;
+  retry_attempts: number;
+  retry_delay_seconds: number;
+};
+
+export type UpdateAgentSettingsPayload = {
+  provider: string;
+  base_url: string;
+  model: string;
+  api_key?: string;
+  parallel_agents_limit: number;
+  retry_attempts: number;
+  retry_delay_seconds: number;
+};
+
+export type AgentModelsResponse = {
+  models: string[];
+  fetch_status: string;
+  fetch_error?: string | null;
+};
+
+export type RunningAgent = {
+  analysis_run_id: string;
+  candidate_id: string;
+  candidate_name: string;
+  job_posting_id: string;
+  job_posting_title?: string | null;
+  status: string;
+  current_stage?: string | null;
+  stage_summary?: string | null;
+  progress_percent: number;
+  provider_used?: string | null;
+  model_used?: string | null;
+  key_label_used?: string | null;
+  worker_slot_index?: number | null;
+  attempt_count: number;
+  max_attempts: number;
+};
+
+export type AgentsStatus = {
+  active_agents: number;
+  running: RunningAgent[];
+  queued: RunningAgent[];
+};

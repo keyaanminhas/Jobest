@@ -6,10 +6,12 @@ import { cn } from "@/lib/utils";
 import {
   ArrowRight,
   Briefcase,
+  Building2,
   CheckCircle2,
   ClipboardList,
   MessageSquareText,
   Sparkles,
+  Target,
   Users,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -39,7 +41,7 @@ export default function NewJobPostingPage() {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState("");
-  const [title, setTitle] = useState("AI Software Engineer");
+  const [title, setTitle] = useState("");
   const [jobDescription, setJobDescription] = useState("");
   const [hiringContext, setHiringContext] = useState("");
   const [companyPriority, setCompanyPriority] = useState("");
@@ -82,227 +84,273 @@ export default function NewJobPostingPage() {
 
   return (
     <AppShell title="Create Hiring Run" subtitle="" noPageHeader>
-      <div className="space-y-6">
-        {/* ── Page heading ── */}
-        <h1 className="font-heading text-[32px] font-extrabold tracking-tight text-slate-950">
-          Create Hiring Run
-        </h1>
-
-        {/* ── Wizard stepper ── */}
-        <div className="flex items-start justify-center gap-0 pb-2">
-          {wizardSteps.map((step, index) => {
-            const Icon = step.icon;
-            const isActive = index === 0;
-            return (
-              <div key={step.label} className="flex items-center">
-                <div className="flex flex-col items-center gap-2">
-                  <div
-                    className={cn(
-                      "grid h-10 w-10 place-items-center rounded-full transition-colors",
-                      isActive
-                        ? "bg-accent text-white shadow-sm shadow-accent/25"
-                        : "border-2 border-slate-200 bg-white text-slate-400",
-                    )}
-                  >
-                    <Icon className="h-[18px] w-[18px]" />
-                  </div>
-                  <span
-                    className={cn(
-                      "whitespace-nowrap text-[13px] font-semibold",
-                      isActive ? "text-accent" : "text-slate-400",
-                    )}
-                  >
-                    {step.label}
-                  </span>
-                </div>
-                {index < wizardSteps.length - 1 && (
-                  <div className="mx-5 mb-6 h-0 w-20 border-t-2 border-dashed border-slate-200" />
-                )}
-              </div>
-            );
-          })}
-        </div>
-
-        {/* ── Main content: 3-column grid ── */}
-        <div className="grid gap-6 xl:grid-cols-[1fr_1fr_310px]">
-          {/* ▸ Left: Job Information */}
-          <div className="rounded-2xl border border-slate-200 bg-white p-6">
-            <div className="mb-5 flex items-center gap-3">
-              <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-blue-50 text-accent">
-                <Briefcase className="h-[18px] w-[18px]" />
-              </div>
-              <div>
-                <h3 className="text-[15px] font-semibold text-slate-900">Job Information</h3>
-                <p className="text-[12px] leading-5 text-slate-500">
-                  Define the role and what success looks like.
-                </p>
-              </div>
+      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="space-y-6">
+          <div className="border-b border-slate-100 pb-5">
+            <div className="mb-2 flex items-center gap-2 text-xs text-slate-500">
+              <Sparkles className="h-4 w-4 text-accent" />
+              Multi-agent recruitment intelligence
             </div>
-
-            <div className="space-y-4">
-              <label className="block space-y-1.5">
-                <span className="text-[13px] font-semibold text-slate-700">Job Title</span>
-                <input
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  placeholder="e.g. Senior SaaS Engineer"
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-[14px] text-slate-900 placeholder:text-slate-400 outline-none transition-all duration-150 focus:border-accent focus:bg-white focus:ring-2 focus:ring-accent/10"
-                />
-              </label>
-
-              <label className="block space-y-1.5">
-                <span className="text-[13px] font-semibold text-slate-700">
-                  Job Description <span className="text-red-400">*</span>
-                </span>
-                <textarea
-                  rows={9}
-                  value={jobDescription}
-                  onChange={(e) => setJobDescription(e.target.value)}
-                  placeholder="Paste the full job description or role responsibilities, requirements, and qualifications."
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-[14px] leading-6 text-slate-900 placeholder:text-slate-400 outline-none transition-all duration-150 focus:border-accent focus:bg-white focus:ring-2 focus:ring-accent/10"
-                />
-                <div className="text-right text-[11px] text-slate-400">
-                  {jobDescription.length} / 4000
-                </div>
-              </label>
-            </div>
-          </div>
-
-          {/* ▸ Middle: Hiring Context */}
-          <div className="rounded-2xl border border-slate-200 bg-white p-6">
-            <div className="mb-5 flex items-center gap-3">
-              <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-blue-50 text-accent">
-                <MessageSquareText className="h-[18px] w-[18px]" />
-              </div>
-              <div>
-                <h3 className="text-[15px] font-semibold text-slate-900">Hiring Context</h3>
-                <p className="text-[12px] leading-5 text-slate-500">
-                  Inform the agents, goals, deal breakers, and hiring bar for the teams.
-                </p>
-              </div>
-            </div>
-
-            <div className="space-y-4">
-              <label className="block space-y-1.5">
-                <span className="text-[13px] font-semibold text-slate-700">
-                  Context & Additional Notes
-                </span>
-                <textarea
-                  rows={5}
-                  value={hiringContext}
-                  onChange={(e) => setHiringContext(e.target.value)}
-                  placeholder="Describe team structure, challenges, must-have skills, culture fit, anything that helps agents evaluate candidates more accurately."
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-[14px] leading-6 text-slate-900 placeholder:text-slate-400 outline-none transition-all duration-150 focus:border-accent focus:bg-white focus:ring-2 focus:ring-accent/10"
-                />
-              </label>
-
-              <label className="block space-y-1.5">
-                <span className="text-[13px] font-semibold text-slate-700">Company Priority</span>
-                <input
-                  value={companyPriority}
-                  onChange={(e) => setCompanyPriority(e.target.value)}
-                  placeholder="e.g. Ship fast, maintain quality"
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-[14px] text-slate-900 placeholder:text-slate-400 outline-none transition-all duration-150 focus:border-accent focus:bg-white focus:ring-2 focus:ring-accent/10"
-                />
-              </label>
-
-              <label className="block space-y-1.5">
-                <span className="text-[13px] font-semibold text-slate-700">Must-Have Skills</span>
-                <input
-                  value={mustHave}
-                  onChange={(e) => setMustHave(e.target.value)}
-                  placeholder="e.g. Python, React (comma-separated)"
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-[14px] text-slate-900 placeholder:text-slate-400 outline-none transition-all duration-150 focus:border-accent focus:bg-white focus:ring-2 focus:ring-accent/10"
-                />
-              </label>
-
-              <label className="block space-y-1.5">
-                <span className="text-[13px] font-semibold text-slate-700">
-                  Nice-to-Have Skills
-                </span>
-                <input
-                  value={niceToHave}
-                  onChange={(e) => setNiceToHave(e.target.value)}
-                  placeholder="e.g. GraphQL, Kubernetes (comma-separated)"
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-[14px] text-slate-900 placeholder:text-slate-400 outline-none transition-all duration-150 focus:border-accent focus:bg-white focus:ring-2 focus:ring-accent/10"
-                />
-              </label>
-            </div>
-          </div>
-
-          {/* ▸ Right: Sidebar */}
-          <div className="space-y-4">
-            {/* What happens next? */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-5">
-              <h3 className="mb-4 flex items-center gap-2 text-[15px] font-semibold text-slate-900">
-                <Sparkles className="h-4 w-4 text-accent" />
-                What happens next?
-              </h3>
-              <div className="space-y-3">
-                {whatHappensNext.map((item, index) => (
-                  <div key={item} className="flex items-start gap-3">
-                    <div className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-accent text-[11px] font-bold text-white">
-                      {index + 1}
-                    </div>
-                    <span className="text-[13px] leading-5 text-slate-600">{item}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Load Demo Scenario */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-5">
-              <h3 className="mb-1 text-[15px] font-semibold text-slate-900">
-                Load Demo Scenario
-              </h3>
-              <p className="mb-4 text-[12px] leading-5 text-slate-500">
-                Explore a simulated example to see the full pipeline in action.
+            <div>
+              <h1 className="font-heading text-[48px] font-extrabold tracking-tight text-slate-950">
+                Create Hiring Run
+              </h1>
+              <p className="mt-2 max-w-3xl text-[14px] leading-6 text-slate-600">
+                Configure the role, define the hiring context, and prepare the workflow before
+                candidates enter the evaluation pipeline.
               </p>
-              <button
-                type="button"
-                onClick={loadDemo}
-                className="w-full cursor-pointer rounded-xl border-2 border-accent px-4 py-2.5 text-[13px] font-semibold text-accent transition-colors duration-150 hover:bg-accent hover:text-white"
-              >
-                Load Demo Scenario
-              </button>
             </div>
           </div>
-        </div>
 
-        {/* ── Error alert ── */}
-        {error ? (
-          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-[13px] leading-5 text-red-700">
-            {error}
+          <div className="flex items-start justify-center gap-0 pb-2">
+            {wizardSteps.map((step, index) => {
+              const Icon = step.icon;
+              const isActive = index === 0;
+              return (
+                <div key={step.label} className="flex items-center">
+                  <div className="flex flex-col items-center gap-2">
+                    <div
+                      className={cn(
+                        "grid h-10 w-10 place-items-center rounded-full transition-colors",
+                        isActive
+                          ? "bg-accent text-white shadow-sm shadow-accent/25"
+                          : "border-2 border-slate-200 bg-white text-slate-400",
+                      )}
+                    >
+                      <Icon className="h-[18px] w-[18px]" />
+                    </div>
+                    <span
+                      className={cn(
+                        "whitespace-nowrap text-[13px] font-semibold",
+                        isActive ? "text-accent" : "text-slate-400",
+                      )}
+                    >
+                      {step.label}
+                    </span>
+                  </div>
+                  {index < wizardSteps.length - 1 && (
+                    <div className="mx-5 mb-6 h-0 w-20 border-t-2 border-dashed border-slate-200" />
+                  )}
+                </div>
+              );
+            })}
           </div>
-        ) : null}
 
-        {/* ── Bottom bar ── */}
-        <div className="flex items-center justify-between border-t border-slate-200 pt-5">
-          <button
-            type="button"
-            onClick={() => router.back()}
-            className="cursor-pointer text-[14px] font-semibold text-slate-500 transition-colors duration-150 hover:text-slate-700"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={submit}
-            disabled={pending || !title.trim()}
-            className="group inline-flex cursor-pointer items-center gap-2 rounded-xl bg-accent px-6 py-3 text-[14px] font-semibold text-white transition-colors duration-150 hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {pending ? (
-              <>
-                <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-                Creating...
-              </>
-            ) : (
-              <>
-                Next: Add Candidates
-                <ArrowRight className="h-4 w-4 transition-transform duration-150 group-hover:translate-x-0.5" />
-              </>
-            )}
-          </button>
+          <div className="grid gap-6 xl:grid-cols-[1fr_1fr_310px] xl:items-stretch">
+            <div className="flex h-full flex-col rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+              <div className="mb-5 flex items-center gap-3">
+                <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-blue-50 text-accent">
+                  <Briefcase className="h-[18px] w-[18px]" />
+                </div>
+                <div>
+                  <h3 className="text-[15px] font-semibold text-slate-900">Job Information</h3>
+                  <p className="text-[12px] leading-5 text-slate-500">
+                    Define the role and what success looks like.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-1 flex-col gap-4">
+                <label className="block space-y-1.5">
+                  <span className="text-[13px] font-semibold text-slate-700">Job Title</span>
+                  <input
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    placeholder="e.g. Senior SaaS Engineer"
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-[14px] text-slate-900 placeholder:text-slate-400 outline-none transition-all duration-150 focus:border-accent focus:bg-white focus:ring-2 focus:ring-accent/10"
+                  />
+                </label>
+
+                <label className="flex min-h-0 flex-1 flex-col gap-1.5">
+                  <span className="text-[13px] font-semibold text-slate-700">
+                    Job Description <span className="text-red-400">*</span>
+                  </span>
+                  <textarea
+                    value={jobDescription}
+                    onChange={(e) => setJobDescription(e.target.value)}
+                    placeholder="Paste the full job description or role responsibilities, requirements, and qualifications."
+                    className="h-full min-h-[300px] w-full flex-1 resize-none rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-[14px] leading-6 text-slate-900 placeholder:text-slate-400 outline-none transition-all duration-150 focus:border-accent focus:bg-white focus:ring-2 focus:ring-accent/10 xl:min-h-0"
+                  />
+                  <div className="text-right text-[11px] text-slate-400">
+                    {jobDescription.length} / 4000
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+              <div className="mb-5 flex items-center gap-3">
+                <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-blue-50 text-accent">
+                  <MessageSquareText className="h-[18px] w-[18px]" />
+                </div>
+                <div>
+                  <h3 className="text-[15px] font-semibold text-slate-900">Hiring Context</h3>
+                  <p className="text-[12px] leading-5 text-slate-500">
+                    Inform the agents, goals, deal breakers, and hiring bar for the teams.
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <label className="block space-y-1.5">
+                  <span className="text-[13px] font-semibold text-slate-700">
+                    Context & Additional Notes
+                  </span>
+                  <textarea
+                    rows={5}
+                    value={hiringContext}
+                    onChange={(e) => setHiringContext(e.target.value)}
+                    placeholder="Describe team structure, challenges, must-have skills, culture fit, anything that helps agents evaluate candidates more accurately."
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-[14px] leading-6 text-slate-900 placeholder:text-slate-400 outline-none transition-all duration-150 focus:border-accent focus:bg-white focus:ring-2 focus:ring-accent/10"
+                  />
+                </label>
+
+                <label className="block space-y-1.5">
+                  <span className="text-[13px] font-semibold text-slate-700">
+                    Company Priority
+                  </span>
+                  <input
+                    value={companyPriority}
+                    onChange={(e) => setCompanyPriority(e.target.value)}
+                    placeholder="e.g. Ship fast, maintain quality"
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-[14px] text-slate-900 placeholder:text-slate-400 outline-none transition-all duration-150 focus:border-accent focus:bg-white focus:ring-2 focus:ring-accent/10"
+                  />
+                </label>
+
+                <label className="block space-y-1.5">
+                  <span className="text-[13px] font-semibold text-slate-700">Must-Have Skills</span>
+                  <input
+                    value={mustHave}
+                    onChange={(e) => setMustHave(e.target.value)}
+                    placeholder="e.g. Python, React (comma-separated)"
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-[14px] text-slate-900 placeholder:text-slate-400 outline-none transition-all duration-150 focus:border-accent focus:bg-white focus:ring-2 focus:ring-accent/10"
+                  />
+                </label>
+
+                <label className="block space-y-1.5">
+                  <span className="text-[13px] font-semibold text-slate-700">
+                    Nice-to-Have Skills
+                  </span>
+                  <input
+                    value={niceToHave}
+                    onChange={(e) => setNiceToHave(e.target.value)}
+                    placeholder="e.g. GraphQL, Kubernetes (comma-separated)"
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-[14px] text-slate-900 placeholder:text-slate-400 outline-none transition-all duration-150 focus:border-accent focus:bg-white focus:ring-2 focus:ring-accent/10"
+                  />
+                </label>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <h3 className="mb-4 flex items-center gap-2 text-[15px] font-semibold text-slate-900">
+                  <Sparkles className="h-4 w-4 text-accent" />
+                  What happens next?
+                </h3>
+                <div className="space-y-3">
+                  {whatHappensNext.map((item, index) => (
+                    <div key={item} className="flex items-start gap-3">
+                      <div className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-accent text-[11px] font-bold text-white">
+                        {index + 1}
+                      </div>
+                      <span className="text-[13px] leading-5 text-slate-600">{item}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <h3 className="mb-4 flex items-center gap-2 text-[15px] font-semibold text-slate-900">
+                  <Target className="h-4 w-4 text-accent" />
+                  Run Setup Summary
+                </h3>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2.5">
+                    <span className="text-[12px] text-slate-500">Job title</span>
+                    <span className="max-w-[150px] truncate text-right text-[12px] font-semibold text-slate-900">
+                      {title.trim() || "Not set"}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2.5">
+                    <span className="text-[12px] text-slate-500">Must-have skills</span>
+                    <span className="text-[12px] font-semibold text-slate-900">
+                      {splitCsv(mustHave).length}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2.5">
+                    <span className="text-[12px] text-slate-500">Nice-to-have skills</span>
+                    <span className="text-[12px] font-semibold text-slate-900">
+                      {splitCsv(niceToHave).length}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2.5">
+                    <span className="text-[12px] text-slate-500">Context notes</span>
+                    <span className="text-[12px] font-semibold text-slate-900">
+                      {hiringContext.trim() ? "Added" : "Pending"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-blue-50 via-white to-slate-50 p-5 shadow-sm">
+                <div className="mb-4 flex items-start gap-3">
+                  <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white text-accent shadow-sm">
+                    <Building2 className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <h3 className="mb-1 text-[15px] font-semibold text-slate-900">
+                      Load Demo Scenario
+                    </h3>
+                    <p className="text-[12px] leading-5 text-slate-500">
+                      Populate the form with a sample role to preview the pipeline and candidate
+                      flow quickly.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={loadDemo}
+                  className="w-full cursor-pointer rounded-xl border border-accent bg-white px-4 py-2.5 text-[13px] font-semibold text-accent transition-colors duration-150 hover:bg-accent hover:text-white"
+                >
+                  Load Demo Scenario
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {error ? (
+            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-[13px] leading-5 text-red-700">
+              {error}
+            </div>
+          ) : null}
+
+          <div className="flex items-center justify-between border-t border-slate-200 pt-5">
+            <button
+              type="button"
+              onClick={() => router.back()}
+              className="cursor-pointer text-[14px] font-semibold text-slate-500 transition-colors duration-150 hover:text-slate-700"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={submit}
+              disabled={pending || !title.trim()}
+              className="group inline-flex cursor-pointer items-center gap-2 rounded-xl bg-accent px-6 py-3 text-[14px] font-semibold text-white transition-colors duration-150 hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {pending ? (
+                <>
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                  Creating...
+                </>
+              ) : (
+                <>
+                  Next: Add Candidates
+                  <ArrowRight className="h-4 w-4 transition-transform duration-150 group-hover:translate-x-0.5" />
+                </>
+              )}
+            </button>
+          </div>
         </div>
       </div>
     </AppShell>
