@@ -66,6 +66,7 @@ async def init_db_schema() -> None:
             ("key_label_used", "ALTER TABLE candidate_analysis_runs ADD COLUMN key_label_used VARCHAR(32)"),
             ("worker_slot_index", "ALTER TABLE candidate_analysis_runs ADD COLUMN worker_slot_index INTEGER"),
             ("requested_stage", "ALTER TABLE candidate_analysis_runs ADD COLUMN requested_stage VARCHAR(64)"),
+            ("requested_stage_mode", "ALTER TABLE candidate_analysis_runs ADD COLUMN requested_stage_mode VARCHAR(32)"),
         ]
         for column, statement in alter_statements:
             if column not in existing:

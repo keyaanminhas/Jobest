@@ -94,6 +94,19 @@ _PROGRESS_STAGE_KEYS = [
     "Interview Pack Generator Agent",
     "Final Shortlist Report Agent",
 ]
+_STAGE_CACHE_KEYS = {
+    "JD Deconstruction Agent": "rubric",
+    "Hiring Context Agent": "hiring_context",
+    "Resume Parsing Agent": "parsed_profile",
+    "Candidate Evidence Agent": "evidence",
+    "Transferable Skill Agent": "transferable_skills",
+    "Professional Link Fetcher Agent": "fetched_profiles",
+    "Professional Footprint Agent": "professional_footprint",
+    "Risk & Contradiction Agent": "risk_audit",
+    "Score Aggregation Engine": "score",
+    "Hiring Panel Review Agent": "panel_review",
+    "Interview Pack Generator Agent": "interview_pack",
+}
 IGNORED_LINK_HOSTS: set[str] = {
     "gmail.com",
     "googlemail.com",
@@ -305,6 +318,13 @@ def _progress_from_stage_rows(stage_rows: list[CandidateStageOutput]) -> tuple[f
         return 0.0, latest_stage
     percent = (len(completed) / len(_PROGRESS_STAGE_KEYS)) * 100.0
     return round(percent, 2), latest_stage
+
+
+def _cache_key_for_stage(stage_name: str) -> str | None:
+    for prefix, cache_key in _STAGE_CACHE_KEYS.items():
+        if stage_name.startswith(prefix):
+            return cache_key
+    return None
 
 
 def _normalize_candidate_link(token: str) -> str | None:
@@ -1370,6 +1390,7 @@ async def _run_candidate_analysis_background(candidate_id: str, analysis_run_id:
                 selectinload(Candidate.links),
                 selectinload(Candidate.analysis_runs),
                 selectinload(Candidate.job_posting).selectinload(JobPosting.skills),
+                selectinload(Candidate.final_output),
             )
         )
         if candidate is None:
@@ -1432,9 +1453,38 @@ async def _run_candidate_analysis_background(candidate_id: str, analysis_run_id:
                         "name": candidate.display_name,
                         "resume_text": candidate.resume_text,
                         "professional_links": links,
+                        "cached_stage_outputs": {},
                     }
                 ],
             }
+            if run.requested_stage and (run.requested_stage_mode or "prerequisite_aware") == "isolated":
+                previous_run = await db.scalar(
+                    select(CandidateAnalysisRun)
+                    .where(
+                        CandidateAnalysisRun.candidate_id == candidate.id,
+                        CandidateAnalysisRun.id != analysis_run_id,
+                        CandidateAnalysisRun.status == "completed",
+                    )
+                    .order_by(CandidateAnalysisRun.completed_at.desc().nullslast(), CandidateAnalysisRun.id.desc())
+                )
+                cached_stage_outputs: dict[str, dict] = {}
+                if previous_run is not None:
+                    previous_rows = (
+                        await db.scalars(
+                            select(CandidateStageOutput)
+                            .where(CandidateStageOutput.analysis_run_id == previous_run.id)
+                            .order_by(CandidateStageOutput.created_at.asc())
+                        )
+                    ).all()
+                    for row in previous_rows:
+                        cache_key = _cache_key_for_stage(row.stage_name)
+                        if cache_key:
+                            cached_stage_outputs[cache_key] = row.raw_output_json or {}
+                if candidate.final_output is not None:
+                    cached_stage_outputs.setdefault("score", candidate.final_output.score_json or {})
+                    cached_stage_outputs.setdefault("panel_review", candidate.final_output.panel_review_json or {})
+                    cached_stage_outputs.setdefault("interview_pack", candidate.final_output.interview_pack_json or {})
+                run_data["candidates"][0]["cached_stage_outputs"] = cached_stage_outputs
             stage_snapshots: dict[str, str] = {}
 
             async def progress_callback(pipeline: list[dict], _: list[dict]) -> None:
@@ -1499,6 +1549,7 @@ async def _run_candidate_analysis_background(candidate_id: str, analysis_run_id:
                         run_data,
                         progress_callback=progress_callback,
                         focused_stage=run.requested_stage,
+                        stage_mode=run.requested_stage_mode or "prerequisite_aware",
                     ),
                     timeout=_analysis_timeout_seconds(),
                 )
@@ -1546,7 +1597,8 @@ async def _run_candidate_analysis_background(candidate_id: str, analysis_run_id:
                 run.status = "completed"
                 run.completed_at = datetime.utcnow()
                 run.report_summary = results.get("report")
-                run.current_stage_summary = f"Focused stage refresh completed: {run.requested_stage}"
+                mode_label = "isolated" if (run.requested_stage_mode or "prerequisite_aware") == "isolated" else "focused"
+                run.current_stage_summary = f"{mode_label.title()} stage refresh completed: {run.requested_stage}"
                 run.progress_percent = 100.0
                 run.worker_slot_index = None
                 candidate.analysis_status = "completed"
@@ -1554,7 +1606,7 @@ async def _run_candidate_analysis_background(candidate_id: str, analysis_run_id:
                     Notification(
                         user_id=candidate.uploaded_by_user_id,
                         title="Focused stage completed",
-                        body=f"{candidate.display_name}: {run.requested_stage} refresh completed for {posting.title}.",
+                        body=f"{candidate.display_name}: {(run.requested_stage_mode or 'prerequisite_aware').replace('_', ' ')} {run.requested_stage} refresh completed for {posting.title}.",
                         notification_type="pipeline_completed",
                         candidate_id=candidate.id,
                         analysis_run_id=analysis_run_id,

@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db_session
 from app.deps import get_current_user
-from app.models import AgentChatMessage, AgentChatSession, AgentPendingAction, AgentToolTrace, Candidate, JobPosting, User
+from app.models import AgentChatMessage, AgentChatSession, AgentPendingAction, AgentToolTrace, Candidate, JobPosting, User, UserAgentSettings
 from app.schemas.agent_chat import (
     AgentChatMessageItem,
     AgentChatMessageRequest,
@@ -20,10 +20,13 @@ from app.schemas.agent_chat import (
     AgentToolTraceItem,
     CreateAgentChatSessionRequest,
 )
-from app.services.agent_runtime import RecruiterAgentRuntime, TOOL_MAP
+from app.services.agent_runtime import ISOLATED_STAGE_PREREQUISITES, RecruiterAgentRuntime, TOOL_MAP
+from app.services.model_router import ProviderConfig
+from app.services.secret_crypto import decrypt_secret
 
 router = APIRouter(prefix="/api/agent-chat", tags=["agent-chat"])
 runtime = RecruiterAgentRuntime()
+MAX_AGENT_TOOL_STEPS = 4
 
 
 def _message_item(row: AgentChatMessage) -> AgentChatMessageItem:
@@ -107,14 +110,53 @@ async def _session_response(db: AsyncSession, session: AgentChatSession) -> Agen
 def _result_summary(tool_name: str, result: dict) -> str:
     if tool_name == "list_job_postings":
         postings = result.get("postings", [])
+        if result.get("classification_hint") == "cs_related":
+            def is_cs_related(title: str) -> bool:
+                normalized = title.lower()
+                keywords = (
+                    "software",
+                    "engineer",
+                    "developer",
+                    "backend",
+                    "frontend",
+                    "full stack",
+                    "fullstack",
+                    "ai",
+                    "ml",
+                    "machine learning",
+                    "data",
+                    "cyber",
+                    "security",
+                    "saas",
+                    "computer",
+                    "robotics",
+                    "mechatronics",
+                )
+                return any(keyword in normalized for keyword in keywords)
+
+            matched = [row for row in postings if is_cs_related(str(row.get("title") or ""))]
+            if not matched:
+                return "I did not find any clearly computer-science-related job postings in this workspace."
+            return "These job postings look computer-science-related:\n\n" + "\n".join(
+                f"- {row['title']} (`{row['id']}`)" for row in matched[:12]
+            )
         return f"Found {len(postings)} job postings.\n\n" + "\n".join(f"- {row['title']} (`{row['id']}`)" for row in postings[:12])
     if tool_name == "list_candidates":
         rows = result.get("candidates", [])
+        if result.get("completed_only"):
+            return f"Found {len(rows)} completed candidates.\n\n" + "\n".join(
+                f"- {row['name']}: final {row.get('final_score', 'n/a')}, {row.get('recommendation') or row['analysis_status']}" for row in rows[:15]
+            )
         return f"Found {len(rows)} candidates.\n\n" + "\n".join(f"- {row['name']}: triage {row['triage_score']}/80, {row['analysis_status']}" for row in rows[:15])
     if tool_name == "search_resumes":
         rows = result.get("matches", [])
         return f"Found {result.get('count', len(rows))} resume matches for `{result.get('query', '')}`.\n\n" + "\n".join(
             f"- {row['candidate_name']} ({row['job_posting_title']}): {row['snippet']}" for row in rows[:10]
+        )
+    if tool_name == "find_unsupported_claims":
+        rows = result.get("matches", [])
+        return f"Found {result.get('count', len(rows))} unsupported-claim matches for `{result.get('query', '')}`.\n\n" + "\n".join(
+            f"- {row['candidate_name']}: {row['claim']} -> {row['reason']}" for row in rows[:10]
         )
     if tool_name == "get_analysis_queue":
         return (
@@ -129,7 +171,68 @@ def _result_summary(tool_name: str, result: dict) -> str:
             f"Recommendation: {score.get('recommendation', 'n/a')}.\n\n"
             f"{report.get('summary', 'Stored report is available in the tool trace.')}"
         )
+    if tool_name == "get_job_insights":
+        rows = result.get("entries", [])
+        mode = result.get("mode")
+        title = result.get("job_title", "this posting")
+        if mode == "completed_candidates":
+            return f"Completed candidates for `{title}`: {result.get('completed_count', len(rows))}.\n\n" + "\n".join(
+                f"- {row['candidate_name']}: final {row.get('final_score', 'n/a')}, {row.get('recommendation') or row['analysis_status']}" for row in rows[:10]
+            )
+        if mode == "job_report":
+            return (
+                f"Final report view for `{title}`: {result.get('candidate_count', 0)} candidates, {result.get('completed_count', 0)} completed.\n\n"
+                + "\n".join(
+                    f"- {row['candidate_name']}: final {row.get('final_score', 'n/a')}, {row.get('recommendation') or row['analysis_status']}" for row in rows[:5]
+                )
+                + (f"\n\n{result.get('report_summary')}" if result.get("report_summary") else "")
+            )
+        return f"Top candidates for `{title}`:\n\n" + "\n".join(
+            f"- {row['candidate_name']}: final {row.get('final_score', 'n/a')}, triage {row.get('triage_score', 0)}, {row.get('recommendation') or row['analysis_status']}" for row in rows[:10]
+        )
+    if tool_name == "get_workspace_summary":
+        postings = result.get("postings", [])
+        return (
+            f"Workspace coverage: {result.get('posting_count', 0)} job postings, {result.get('candidate_count', 0)} candidates, "
+            f"{result.get('completed_count', 0)} completed analyses.\n\n"
+            + "\n".join(f"- {row['title']} (`{row['id']}`)" for row in postings[:12])
+        )
     return f"`{tool_name}` completed.\n\n```json\n{json.dumps(result, indent=2)}\n```"
+
+
+def _pending_summary(tool_name: str, arguments: dict) -> str:
+    if tool_name == "run_stage_on_candidates":
+        stage = str(arguments.get("stage") or "").strip()
+        stage_mode = str(arguments.get("stage_mode") or "prerequisite_aware").strip().lower() or "prerequisite_aware"
+        if stage_mode == "isolated":
+            prerequisites = ISOLATED_STAGE_PREREQUISITES.get(stage, [])
+            prereq_text = ", ".join(f"`{item}`" for item in prerequisites) if prerequisites else "none"
+            return (
+                f"Approve isolated `{stage}` refresh with arguments: {json.dumps(arguments, ensure_ascii=True)}\n\n"
+                "Warning: this may be less accurate because prerequisite stages will not be rerun. "
+                f"Typical prerequisites for `{stage}` are: {prereq_text}.\n\n"
+                f"Would you like to continue with isolated mode, or would you prefer the safer path? "
+                f"To use the safer path, cancel this and rerun `{stage}` without isolated mode so Jobest refreshes the prerequisites first."
+            )
+    return f"Approve `{tool_name}` with arguments: {json.dumps(arguments, ensure_ascii=True)}"
+
+
+async def _planner_provider_override(db: AsyncSession, user_id: str) -> ProviderConfig | None:
+    settings = await db.scalar(select(UserAgentSettings).where(UserAgentSettings.user_id == user_id))
+    if settings is None or not settings.encrypted_api_key:
+        return None
+    try:
+        api_key = decrypt_secret(settings.encrypted_api_key).strip()
+    except Exception:
+        return None
+    if not api_key:
+        return None
+    return ProviderConfig(
+        provider=settings.provider or "chutes",
+        base_url=settings.base_url or "https://llm.chutes.ai/v1",
+        api_key=api_key,
+        model=settings.model or "google/gemma-4-31B-turbo-TEE",
+    )
 
 
 @router.post("/sessions", response_model=AgentChatSessionResponse)
@@ -219,49 +322,55 @@ async def send_message(
             .order_by(AgentChatMessage.created_at.asc())
         )
     ).all()
-    plan = await runtime.plan(
-        content=payload.content,
-        session_context={"job_posting_id": session.job_posting_id, "candidate_id": session.candidate_id},
-        history=[{"role": row.role, "content": row.content} for row in history_rows],
-    )
-    tool_name = plan.get("tool_name")
     pending_row = None
-    metadata = {"planner": plan.get("planner", "unknown")}
+    metadata: dict[str, object] = {"planner": "unknown"}
+    provider_override = await _planner_provider_override(db, current_user.id)
+    session_context = {"job_posting_id": session.job_posting_id, "candidate_id": session.candidate_id}
+    tool_results: list[dict[str, object]] = []
+    seen_read_signatures: set[str] = set()
+    assistant_text = "I need more detail before I can act."
 
-    if tool_name is None:
-        assistant_text = str(plan.get("answer") or "I need more detail before I can act.")
-    else:
-        spec = TOOL_MAP[tool_name]
+    for _ in range(MAX_AGENT_TOOL_STEPS):
+        plan = await runtime.plan(
+            db,
+            user_id=current_user.id,
+            content=payload.content,
+            session_context=session_context,
+            history=[{"role": row.role, "content": row.content} for row in history_rows],
+            tool_results=tool_results,
+            provider_override=provider_override,
+        )
+        metadata = {"planner": plan.get("planner", "unknown")}
+        tool_name = plan.get("tool_name")
         arguments = plan.get("arguments") or {}
-        metadata.update({"tool_name": tool_name, "risk_class": spec.risk_class})
-        if spec.risk_class == "read":
-            try:
-                result = await runtime.execute(db, user_id=current_user.id, tool_name=tool_name, arguments=arguments)
-                trace = AgentToolTrace(
-                    session_id=session.id,
-                    user_id=current_user.id,
-                    tool_name=tool_name,
-                    risk_class=spec.risk_class,
-                    status="completed",
-                    arguments_json=arguments,
-                    result_json=result,
-                )
-                db.add(trace)
-                assistant_text = _result_summary(tool_name, result)
-            except Exception as exc:
-                trace = AgentToolTrace(
-                    session_id=session.id,
-                    user_id=current_user.id,
-                    tool_name=tool_name,
-                    risk_class=spec.risk_class,
-                    status="error",
-                    arguments_json=arguments,
-                    result_json={"error": str(exc)},
-                )
-                db.add(trace)
-                assistant_text = f"I could not run `{tool_name}`: {exc}"
-        else:
-            summary = f"Approve `{tool_name}` with arguments: {json.dumps(arguments, ensure_ascii=True)}"
+        resolved_posting_id = arguments.get("job_posting_id") if isinstance(arguments, dict) else None
+        resolved_candidate_id = None
+        if isinstance(arguments, dict):
+            candidate_ids = arguments.get("candidate_ids")
+            if isinstance(candidate_ids, list) and candidate_ids:
+                resolved_candidate_id = candidate_ids[0]
+            resolved_candidate_id = resolved_candidate_id or arguments.get("candidate_id")
+        if resolved_posting_id and not session.job_posting_id:
+            posting = await db.scalar(
+                select(JobPosting).where(JobPosting.id == resolved_posting_id, JobPosting.user_id == current_user.id)
+            )
+            if posting is not None:
+                session.job_posting_id = posting.id
+                session_context["job_posting_id"] = posting.id
+                if session.title == "Recruiter Copilot":
+                    session.title = posting.title
+        if resolved_candidate_id and not session.candidate_id:
+            session.candidate_id = resolved_candidate_id
+            session_context["candidate_id"] = resolved_candidate_id
+
+        if tool_name is None:
+            assistant_text = str(plan.get("answer") or "I need more detail before I can act.")
+            break
+
+        spec = TOOL_MAP[tool_name]
+        metadata.update({"tool_name": tool_name, "risk_class": spec.risk_class, "tool_steps": len(tool_results) + 1})
+        if spec.risk_class != "read":
+            summary = _pending_summary(tool_name, arguments)
             pending_row = AgentPendingAction(
                 session_id=session.id,
                 user_id=current_user.id,
@@ -280,11 +389,55 @@ async def send_message(
                     risk_class=spec.risk_class,
                     status="awaiting_confirmation",
                     arguments_json=arguments,
-                    result_json={"pending": True},
+                    result_json={"pending": True, "tool_results": tool_results},
                 )
             )
             await db.flush()
             assistant_text = f"This action changes workspace state and needs confirmation.\n\n{summary}"
+            break
+
+        signature = json.dumps({"tool_name": tool_name, "arguments": arguments}, sort_keys=True, ensure_ascii=True)
+        if signature in seen_read_signatures:
+            assistant_text = str(plan.get("answer") or "I reached the same read step twice and need a clearer target to continue.")
+            break
+        seen_read_signatures.add(signature)
+        try:
+            result = await runtime.execute(db, user_id=current_user.id, tool_name=tool_name, arguments=arguments)
+            db.add(
+                AgentToolTrace(
+                    session_id=session.id,
+                    user_id=current_user.id,
+                    tool_name=tool_name,
+                    risk_class=spec.risk_class,
+                    status="completed",
+                    arguments_json=arguments,
+                    result_json=result,
+                )
+            )
+            tool_results.append(
+                {
+                    "tool_name": tool_name,
+                    "arguments": arguments,
+                    "result": result,
+                    "summary": _result_summary(tool_name, result),
+                }
+            )
+            assistant_text = _result_summary(tool_name, result)
+            continue
+        except Exception as exc:
+            db.add(
+                AgentToolTrace(
+                    session_id=session.id,
+                    user_id=current_user.id,
+                    tool_name=tool_name,
+                    risk_class=spec.risk_class,
+                    status="error",
+                    arguments_json=arguments,
+                    result_json={"error": str(exc)},
+                )
+            )
+            assistant_text = f"I could not run `{tool_name}`: {exc}"
+            break
 
     assistant = AgentChatMessage(session_id=session.id, role="assistant", content=assistant_text, metadata_json=metadata)
     db.add(assistant)

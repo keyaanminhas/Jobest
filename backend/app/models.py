@@ -148,6 +148,7 @@ class CandidateAnalysisRun(Base):
     key_label_used: Mapped[str | None] = mapped_column(String(32), nullable=True)
     worker_slot_index: Mapped[int | None] = mapped_column(nullable=True)
     requested_stage: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    requested_stage_mode: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
     candidate: Mapped[Candidate] = relationship(back_populates="analysis_runs")
     stage_outputs: Mapped[list["CandidateStageOutput"]] = relationship(
