@@ -1495,7 +1495,11 @@ async def _run_candidate_analysis_background(candidate_id: str, analysis_run_id:
             orchestrator = PipelineOrchestrator(provider_override=provider_override)
             try:
                 results = await asyncio.wait_for(
-                    orchestrator.run_pipeline(run_data, progress_callback=progress_callback),
+                    orchestrator.run_pipeline(
+                        run_data,
+                        progress_callback=progress_callback,
+                        focused_stage=run.requested_stage,
+                    ),
                     timeout=_analysis_timeout_seconds(),
                 )
             except Exception as exc:
@@ -1530,6 +1534,28 @@ async def _run_candidate_analysis_background(candidate_id: str, analysis_run_id:
                         title="Pipeline failed",
                         body=f"{candidate.display_name} analysis failed for {posting.title}: {exc}",
                         notification_type="pipeline_failed",
+                        candidate_id=candidate.id,
+                        analysis_run_id=analysis_run_id,
+                        is_read=False,
+                    )
+                )
+                await db.commit()
+                return
+
+            if run.requested_stage:
+                run.status = "completed"
+                run.completed_at = datetime.utcnow()
+                run.report_summary = results.get("report")
+                run.current_stage_summary = f"Focused stage refresh completed: {run.requested_stage}"
+                run.progress_percent = 100.0
+                run.worker_slot_index = None
+                candidate.analysis_status = "completed"
+                db.add(
+                    Notification(
+                        user_id=candidate.uploaded_by_user_id,
+                        title="Focused stage completed",
+                        body=f"{candidate.display_name}: {run.requested_stage} refresh completed for {posting.title}.",
+                        notification_type="pipeline_completed",
                         candidate_id=candidate.id,
                         analysis_run_id=analysis_run_id,
                         is_read=False,

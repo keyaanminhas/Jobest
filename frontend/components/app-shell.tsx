@@ -23,6 +23,7 @@ import { cn } from "@/lib/utils";
 
 const navItems = [
   { href: "/jobs", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/ai", label: "AI Copilot", icon: Sparkles },
   { href: "/jobs/current", label: "Current Postings", icon: BriefcaseBusiness },
   { href: "/jobs/new", label: "New Posting", icon: BriefcaseBusiness },
   { href: "/candidates", label: "Candidates", icon: Users },
@@ -36,6 +37,7 @@ function resolveTabTitle(pathname: string, pageTitle?: string) {
   if (trimmedTitle) return `Jobest | ${trimmedTitle}`;
 
   if (pathname === "/jobs") return "Jobest | Dashboard";
+  if (pathname === "/ai") return "Jobest | AI Copilot";
   if (pathname.startsWith("/jobs/current")) return "Jobest | Current Postings";
   if (pathname.startsWith("/jobs/new")) return "Jobest | New Posting";
   if (pathname.startsWith("/jobs/")) return "Jobest | Job Details";

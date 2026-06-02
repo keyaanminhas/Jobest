@@ -453,3 +453,51 @@ export type AgentsStatus = {
   running: RunningAgent[];
   queued: RunningAgent[];
 };
+
+export type AgentChatMessage = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  metadata: Record<string, unknown>;
+  created_at: string;
+};
+
+export type AgentToolTrace = {
+  id: string;
+  tool_name: string;
+  risk_class: string;
+  status: string;
+  arguments: Record<string, unknown>;
+  result: Record<string, unknown>;
+  created_at: string;
+};
+
+export type AgentPendingAction = {
+  id: string;
+  tool_name: string;
+  arguments: Record<string, unknown>;
+  summary: string;
+  status: string;
+  expires_at: string;
+};
+
+export type AgentChatSessionSummary = {
+  id: string;
+  title: string;
+  job_posting_id?: string | null;
+  candidate_id?: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AgentChatSession = AgentChatSessionSummary & {
+  messages: AgentChatMessage[];
+  traces: AgentToolTrace[];
+  pending_actions: AgentPendingAction[];
+};
+
+export type AgentChatTurn = {
+  session: AgentChatSession;
+  assistant_message: AgentChatMessage;
+  pending_action?: AgentPendingAction | null;
+};

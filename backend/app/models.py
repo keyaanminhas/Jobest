@@ -147,6 +147,7 @@ class CandidateAnalysisRun(Base):
     model_used: Mapped[str | None] = mapped_column(String(255), nullable=True)
     key_label_used: Mapped[str | None] = mapped_column(String(32), nullable=True)
     worker_slot_index: Mapped[int | None] = mapped_column(nullable=True)
+    requested_stage: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     candidate: Mapped[Candidate] = relationship(back_populates="analysis_runs")
     stage_outputs: Mapped[list["CandidateStageOutput"]] = relationship(
@@ -200,3 +201,55 @@ class Notification(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 
     user: Mapped[User] = relationship(back_populates="notifications")
+
+
+class AgentChatSession(Base):
+    __tablename__ = "agent_chat_sessions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    title: Mapped[str] = mapped_column(String(255), default="Recruiter Copilot")
+    job_posting_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    candidate_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class AgentChatMessage(Base):
+    __tablename__ = "agent_chat_messages"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    session_id: Mapped[str] = mapped_column(ForeignKey("agent_chat_sessions.id"), index=True)
+    role: Mapped[str] = mapped_column(String(16))
+    content: Mapped[str] = mapped_column(Text)
+    metadata_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class AgentPendingAction(Base):
+    __tablename__ = "agent_pending_actions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    session_id: Mapped[str] = mapped_column(ForeignKey("agent_chat_sessions.id"), index=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    tool_name: Mapped[str] = mapped_column(String(128))
+    arguments_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    summary: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    executed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class AgentToolTrace(Base):
+    __tablename__ = "agent_tool_traces"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    session_id: Mapped[str] = mapped_column(ForeignKey("agent_chat_sessions.id"), index=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    tool_name: Mapped[str] = mapped_column(String(128))
+    risk_class: Mapped[str] = mapped_column(String(32))
+    status: Mapped[str] = mapped_column(String(32))
+    arguments_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    result_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

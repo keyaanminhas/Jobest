@@ -321,6 +321,25 @@ Jobest exposes:
 
 This is useful in a real hiring workflow because recruiters need visibility, not just automation.
 
+## Finalist AI Copilot
+
+The finalist branch adds a guarded recruiter copilot at:
+
+```text
+http://127.0.0.1:3001/ai
+```
+
+The copilot dynamically selects typed workspace tools to:
+
+- inspect postings, candidates, reports, and queue state
+- search stored resume text and triage summaries
+- draft job postings from partial recruiter input
+- rerun triage or queue full candidate analysis
+- refresh one selected pipeline stage with its prerequisites
+- tune safe runtime controls such as parallel agent count and retry behavior
+
+Read-only tools execute immediately. Any workspace mutation is prepared as a pending action and requires recruiter confirmation. Credentials, model selection, provider configuration, and base URLs remain outside agent control. Resume text and fetched professional content are treated as untrusted data, never as agent instructions.
+
 ## Submission Notes
 
 This repository is intended to support the AI Marathon 2026 submission requirements:

@@ -5,6 +5,9 @@ import { clearAuthToken, getAuthToken, setAuthToken } from "@/lib/session";
 import { getRunLocal, saveRunLocal } from "@/lib/storage";
 import {
   AgentModelsResponse,
+  AgentChatSession,
+  AgentChatSessionSummary,
+  AgentChatTurn,
   AgentSettings,
   AgentsStatus,
   AnalysisQueueStatus,
@@ -262,6 +265,40 @@ export async function getAgentModels() {
 
 export async function getAgentsStatus() {
   return requestOrg<AgentsStatus>("/api/agents/status");
+}
+
+export async function createAgentChatSession(payload: { title?: string; job_posting_id?: string | null; candidate_id?: string | null }) {
+  return requestOrg<AgentChatSession>("/api/agent-chat/sessions", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function listAgentChatSessions() {
+  return requestOrg<AgentChatSessionSummary[]>("/api/agent-chat/sessions");
+}
+
+export async function getAgentChatSession(sessionId: string) {
+  return requestOrg<AgentChatSession>(`/api/agent-chat/sessions/${sessionId}`);
+}
+
+export async function sendAgentChatMessage(sessionId: string, content: string) {
+  return requestOrg<AgentChatTurn>(`/api/agent-chat/sessions/${sessionId}/messages`, {
+    method: "POST",
+    body: JSON.stringify({ content }),
+  });
+}
+
+export async function confirmAgentAction(actionId: string) {
+  return requestOrg<AgentChatTurn>(`/api/agent-chat/pending-actions/${actionId}/confirm`, {
+    method: "POST",
+  });
+}
+
+export async function cancelAgentAction(actionId: string) {
+  return requestOrg<AgentChatSession>(`/api/agent-chat/pending-actions/${actionId}/cancel`, {
+    method: "POST",
+  });
 }
 
 export function toApiUrl(path: string) {

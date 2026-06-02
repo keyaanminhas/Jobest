@@ -10,6 +10,7 @@ PROJECT_DIR = Path(__file__).resolve().parents[1]
 load_dotenv(PROJECT_DIR / ".env", override=False)
 
 from app.api.org_routes import router as org_api_router  # noqa: E402
+from app.api.ai_routes import router as ai_api_router  # noqa: E402
 from app.api.routes import router as api_router  # noqa: E402
 from app.db import init_db_schema  # noqa: E402
 from app.services.model_router import ModelRouter  # noqa: E402
@@ -29,6 +30,7 @@ app.add_middleware(
 )
 app.include_router(api_router)
 app.include_router(org_api_router)
+app.include_router(ai_api_router)
 
 
 @app.on_event("startup")
