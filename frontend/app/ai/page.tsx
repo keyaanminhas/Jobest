@@ -3,6 +3,7 @@
 import { AppShell } from "@/components/app-shell";
 import { Panel } from "@/components/ui";
 import LiveAgentPlan from "@/components/ui/live-agent-plan";
+import { AIPromptBox } from "@/components/ui/ai-prompt-box";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   cancelAgentAction,
@@ -28,6 +29,8 @@ import {
   ShieldCheck,
   Wrench,
   XCircle,
+  X,
+  History,
 } from "lucide-react";
 import Image from "next/image";
 import { useEffect, useRef, useState, useTransition } from "react";
@@ -99,23 +102,6 @@ function isUploadIntent(prompt: string) {
   return ["upload", "attach", "add this resume", "add this cv", "assign this resume", "assign this cv"].some((token) => lower.includes(token));
 }
 
-function messageBubble(row: AgentChatMessage) {
-  return row.role === "user"
-    ? "bg-accent text-white shadow-[0_18px_40px_rgba(29,78,216,0.18)]"
-    : "border border-slate-200 bg-slate-50 text-slate-700";
-}
-
-function senderRail(row: AgentChatMessage) {
-  return row.role === "user" ? "justify-end" : "justify-start";
-}
-
-function traceStatusTone(status: string) {
-  if (status === "completed") return "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200";
-  if (status === "awaiting_confirmation") return "bg-amber-50 text-amber-800 ring-1 ring-amber-200";
-  if (status === "error") return "bg-red-50 text-red-700 ring-1 ring-red-200";
-  return "bg-slate-100 text-slate-600 ring-1 ring-slate-200";
-}
-
 function MarkdownMessage({ content, user }: { content: string; user: boolean }) {
   return (
     <div className={`prose prose-sm max-w-none ${user ? "prose-invert" : "prose-slate"}`}>
@@ -172,10 +158,10 @@ function associateTracesWithMessages(messages: AgentChatMessage[], traces: Agent
   for (const trace of sortedTraces) {
     const traceTime = new Date(trace.created_at).getTime();
 
-    // Move to the first assistant message that is at or after the trace timestamp
+    // Move to the first assistant message that is at or after the trace timestamp (with a 5-second tolerance for flush timing skew)
     while (
       msgIdx < assistantMessages.length &&
-      new Date(assistantMessages[msgIdx].created_at).getTime() < traceTime
+      new Date(assistantMessages[msgIdx].created_at).getTime() + 5000 < traceTime
     ) {
       msgIdx++;
     }
@@ -206,8 +192,6 @@ function associateTracesWithMessages(messages: AgentChatMessage[], traces: Agent
   return association;
 }
 
-// ─── main page ────────────────────────────────────────────────────────────────
-
 export default function AiCopilotPage() {
   const [pending, startTransition] = useTransition();
   const [jobs, setJobs] = useState<JobPostingRecord[]>([]);
@@ -218,13 +202,13 @@ export default function AiCopilotPage() {
   const [files, setFiles] = useState<File[]>([]);
   const [error, setError] = useState("");
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [contextOpen, setContextOpen] = useState(false);
   const [suggestionIndex, setSuggestionIndex] = useState(0);
   const [optimisticMessages, setOptimisticMessages] = useState<AgentChatMessage[]>([]);
   const [isResponding, setIsResponding] = useState(false);
+
   const messagesViewportRef = useRef<HTMLDivElement | null>(null);
   const historyRef = useRef<HTMLDivElement | null>(null);
-  const contextRef = useRef<HTMLDivElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   function addFiles(nextFiles: File[]) {
     const pdfFiles = nextFiles.filter(isPdfFile);
@@ -275,9 +259,6 @@ export default function AiCopilotPage() {
       if (historyRef.current && !historyRef.current.contains(event.target as Node)) {
         setHistoryOpen(false);
       }
-      if (contextRef.current && !contextRef.current.contains(event.target as Node)) {
-        setContextOpen(false);
-      }
     }
     document.addEventListener("mousedown", handleOutsideClick);
     return () => document.removeEventListener("mousedown", handleOutsideClick);
@@ -320,21 +301,17 @@ export default function AiCopilotPage() {
     return [...(session?.messages || []), ...optimisticMessages];
   }
 
-  function latestAssistantToolSteps() {
-    const messages = session?.messages || [];
-    for (let index = messages.length - 1; index >= 0; index -= 1) {
-      const row = messages[index];
-      if (row.role !== "assistant") continue;
-      const steps = Number(row.metadata?.tool_steps || 0);
-      if (Number.isFinite(steps) && steps > 0) return steps;
+  function latestAssistantIndex() {
+    const all = visibleMessages();
+    for (let i = all.length - 1; i >= 0; i--) {
+      if (all[i].role === "assistant") return i;
     }
-    return 0;
+    return -1;
   }
 
   function pickSuggestion(index: number) {
     const normalized = ((index % suggestions.length) + suggestions.length) % suggestions.length;
     setSuggestionIndex(normalized);
-    setMessage(suggestions[normalized]);
   }
 
   function send() {
@@ -446,121 +423,109 @@ export default function AiCopilotPage() {
 
   const allMessages = visibleMessages();
   const msgTracesMap = associateTracesWithMessages(allMessages, session?.traces || []);
-
-  const latestAssistantIndex = (() => {
-    for (let index = allMessages.length - 1; index >= 0; index--) {
-      if (allMessages[index].role === "assistant") {
-        return index;
-      }
-    }
-    return -1;
-  })();
+  const latestAssIndex = latestAssistantIndex();
 
   return (
     <AppShell
       title="AI Recruiter Copilot"
       subtitle="A guarded tool-using agent for workspace search, posting setup, resume triage, analysis orchestration, and safe runtime control."
-      actions={
-        <button
-          type="button"
-          onClick={newSession}
-          disabled={pending}
-          className="inline-flex items-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
-        >
-          <Plus className="h-4 w-4" /> New session
-        </button>
-      }
+      noPageHeader={true}
     >
-      <div className="grid gap-5 xl:h-[calc(100vh-18.5rem)] xl:min-h-[680px] xl:grid-cols-[minmax(0,1fr)]">
-        <Panel className="h-[calc(100vh-21rem)] min-h-[640px] overflow-hidden bg-[linear-gradient(180deg,#ffffff_0%,#f8fbff_100%)] xl:h-full">
-          <div className="flex h-full min-h-0 flex-col">
-            <div className="mb-4 flex items-start justify-between gap-4 border-b border-slate-100 pb-4">
-              <div className="flex items-center gap-3">
-                <div className="grid h-11 w-11 place-items-center rounded-2xl bg-blue-50 text-accent shadow-sm">
-                  <Bot className="h-5 w-5" />
-                </div>
-                <div>
-                  <div className="font-semibold text-slate-900">{session?.title || "Start a copilot session"}</div>
-                  <div className="text-xs text-slate-500">Reads run immediately. Workspace changes wait for your approval.</div>
-                </div>
-              </div>
+      <div className="flex flex-col h-[calc(100vh-8.5rem)] min-h-[580px] bg-white border border-slate-200/80 rounded-2xl overflow-hidden shadow-sm">
+        {/* Elegant Top Navigation Header */}
+        <div className="flex items-center justify-between border-b border-slate-100 bg-white px-5 py-3 shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="grid h-9 w-9 place-items-center rounded-xl bg-blue-50 text-accent">
+              <Bot className="h-4.5 w-4.5" />
+            </div>
+            <div>
+              <div className="font-semibold text-slate-800 text-sm">{session?.title || "Recruiter Copilot"}</div>
+              <div className="text-[11px] text-slate-400">Reads run immediately. Changes require approval.</div>
+            </div>
+          </div>
 
-              <div className="relative shrink-0" ref={historyRef}>
-                <button
-                  type="button"
-                  onClick={() => setHistoryOpen((current) => !current)}
-                  className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
-                >
-                  <Clock3 className="h-4 w-4 text-accent" />
-                  Sessions
-                </button>
-                {historyOpen ? (
-                  <div className="absolute right-0 top-12 z-30 w-[320px] rounded-2xl border border-slate-200 bg-white p-3 shadow-xl">
-                    <div className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Recent sessions</div>
-                    <div className="max-h-[360px] space-y-2 overflow-y-auto pr-1">
-                      {sessions.map((row) => (
-                        <button
-                          key={row.id}
-                          type="button"
-                          onClick={() => openSession(row.id)}
-                          className={`w-full rounded-xl border px-3 py-2 text-left text-xs transition ${
-                            session?.id === row.id ? "border-blue-300 bg-blue-50 text-accent" : "border-slate-200 text-slate-600 hover:bg-slate-50"
-                          }`}
-                        >
-                          <div className="font-semibold">{row.title}</div>
-                          <div className="mt-1 text-[10px] opacity-70" suppressHydrationWarning>{new Date(row.updated_at).toLocaleString()}</div>
-                        </button>
-                      ))}
-                      {sessions.length === 0 ? <div className="text-xs text-slate-500">Start a new workspace session.</div> : null}
-                    </div>
+          <div className="flex items-center gap-2">
+            <div className="relative" ref={historyRef}>
+              <button
+                type="button"
+                onClick={() => setHistoryOpen((current) => !current)}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
+              >
+                <History className="h-3.5 w-3.5 text-accent" />
+                History
+              </button>
+              {historyOpen && (
+                <div className="absolute right-0 top-10 z-30 w-[280px] rounded-xl border border-slate-200 bg-white p-3 shadow-lg backdrop-blur-md bg-white/95">
+                  <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">Recent Sessions</div>
+                  <div className="max-h-[300px] space-y-1.5 overflow-y-auto pr-1">
+                    {sessions.map((row) => (
+                      <button
+                        key={row.id}
+                        type="button"
+                        onClick={() => openSession(row.id)}
+                        className={`w-full rounded-lg border px-2.5 py-1.5 text-left text-xs transition ${
+                          session?.id === row.id 
+                            ? "border-blue-200 bg-blue-50/50 text-accent" 
+                            : "border-slate-100 text-slate-600 hover:bg-slate-50"
+                        }`}
+                      >
+                        <div className="font-semibold truncate">{row.title}</div>
+                        <div className="mt-0.5 text-[9px] opacity-70" suppressHydrationWarning>
+                          {new Date(row.updated_at).toLocaleString()}
+                        </div>
+                      </button>
+                    ))}
+                    {sessions.length === 0 && <div className="text-xs text-slate-500">No sessions.</div>}
                   </div>
-                ) : null}
-              </div>
+                </div>
+              )}
             </div>
 
-            <div ref={messagesViewportRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-2 scroll-smooth">
-              {allMessages.map((row, rowIndex, rows) => {
-                const isUser = row.role === "user";
-                const isLoading = !!row.metadata?.loading;
-                const msgTraces = msgTracesMap[row.id] || [];
+            <button
+              type="button"
+              onClick={newSession}
+              disabled={pending}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-blue-700 disabled:opacity-60"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              New
+            </button>
+          </div>
+        </div>
 
-                if (isLoading) {
-                  return (
-                    <motion.div
-                      key={row.id}
-                      initial={{ opacity: 0, y: 8 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: 0.25, ease: [0.2, 0.65, 0.3, 0.9] }}
-                      className="space-y-3"
-                    >
-                      <div className="flex justify-start">
-                        <div className="flex items-end gap-3 max-w-[80%]">
-                          <div className="grid h-9 w-9 shrink-0 place-items-center rounded-2xl border border-slate-200 bg-white shadow-sm">
-                            <Image src="/icon.svg" alt="Jobest" width={18} height={18} className="h-[18px] w-[18px]" />
-                          </div>
-                          <div className="rounded-[1.35rem] border border-slate-200 bg-white px-4 py-3 shadow-sm">
-                            <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Jobest AI</div>
-                            <div className="flex items-center gap-3">
-                              <span className="flex items-center gap-1">
-                                {[0, 1, 2].map((i) => (
-                                  <span
-                                    key={i}
-                                    className="inline-block h-1.5 w-1.5 rounded-full bg-accent"
-                                    style={{
-                                      animation: `bounce 1.2s ease-in-out ${i * 0.2}s infinite`,
-                                    }}
-                                  />
-                                ))}
-                              </span>
-                              <span className="text-sm text-slate-500">Thinking…</span>
-                            </div>
-                          </div>
-                        </div>
+        {/* Conversation Viewport */}
+        <div ref={messagesViewportRef} className="flex-1 min-h-0 overflow-y-auto bg-slate-50/30 px-6 py-4 space-y-6 scroll-smooth">
+          {allMessages.map((row, rowIndex, rows) => {
+            const isUser = row.role === "user";
+            const isLoading = !!row.metadata?.loading;
+            const msgTraces = msgTracesMap[row.id] || [];
+
+            if (isLoading) {
+              return (
+                <div key={row.id} className="flex justify-start py-4">
+                  <div className="flex gap-4 w-full max-w-[85%]">
+                    <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-blue-50 text-accent border border-blue-100/50">
+                      <Bot className="h-4.5 w-4.5" />
+                    </div>
+                    <div className="flex-1 space-y-2">
+                      <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">Jobest AI</div>
+                      <div className="flex items-center gap-3">
+                        <span className="flex items-center gap-1">
+                          {[0, 1, 2].map((i) => (
+                            <span
+                              key={i}
+                              className="inline-block h-1.5 w-1.5 rounded-full bg-accent"
+                              style={{
+                                animation: `bounce 1.2s ease-in-out ${i * 0.2}s infinite`,
+                              }}
+                            />
+                          ))}
+                        </span>
+                        <span className="text-xs text-slate-400 font-medium">Thinking…</span>
                       </div>
-
-                      {/* Agent plan panel below the thinking bubble */}
+                      
                       {msgTraces && msgTraces.length > 0 && (
-                        <div className="ml-12 mt-2 max-w-[84%]">
+                        <div className="mt-3">
                           <LiveAgentPlan
                             traces={msgTraces}
                             isResponding={isResponding}
@@ -569,212 +534,89 @@ export default function AiCopilotPage() {
                           />
                         </div>
                       )}
-                    </motion.div>
-                  );
-                }
-
-                return (
-                  <motion.div
-                    key={row.id}
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.25, ease: [0.2, 0.65, 0.3, 0.9] }}
-                  >
-                    <div className={`flex w-full ${isUser ? "justify-end" : "justify-start"}`}>
-                      <div className={`flex max-w-[84%] items-end gap-2.5 ${isUser ? "flex-row-reverse" : ""}`}>
-                        {/* Avatar */}
-                        <div
-                          className={`grid h-9 w-9 shrink-0 place-items-center rounded-2xl border ${
-                            isUser
-                              ? "border-blue-200 bg-blue-50 text-accent"
-                              : "border-slate-200 bg-white shadow-sm"
-                          }`}
-                        >
-                          {isUser ? (
-                            <span className="text-xs font-bold">KM</span>
-                          ) : (
-                            <Image src="/icon.svg" alt="Jobest" width={18} height={18} className="h-[18px] w-[18px]" />
-                          )}
-                        </div>
-
-                        {/* Bubble */}
-                        <div
-                          className={`rounded-[1.35rem] px-4 py-3 text-sm leading-6 ${
-                            isUser
-                              ? "bg-accent text-white shadow-[0_8px_24px_rgba(29,78,216,0.2)]"
-                              : "border border-slate-200 bg-slate-50 text-slate-700 border-l-2 border-l-accent/20"
-                          }`}
-                        >
-                          <div
-                            className={`mb-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] ${
-                              isUser ? "text-blue-200" : "text-slate-400"
-                            }`}
-                          >
-                            {isUser ? "You" : "Jobest AI"}
-                          </div>
-                          <MarkdownMessage content={row.content} user={isUser} />
-                        </div>
-                      </div>
                     </div>
+                  </div>
+                </div>
+              );
+            }
 
-                    {/* Agent plan panel below each assistant message */}
-                    {!isUser && msgTraces && msgTraces.length > 0 && (
-                      <div className="ml-12 mt-2 max-w-[84%]">
+            if (isUser) {
+              return (
+                <div key={row.id} className="flex justify-end py-2">
+                  <div className="flex gap-3 max-w-[80%] flex-row-reverse items-start">
+                    <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-accent text-white font-bold text-xs shadow-sm">
+                      KM
+                    </div>
+                    <div className="rounded-2xl bg-accent/5 border border-accent/10 px-4 py-2.5 text-slate-800 text-sm leading-relaxed shadow-sm">
+                      <div className="text-[9px] font-bold text-accent uppercase tracking-wider mb-1">You</div>
+                      <MarkdownMessage content={row.content} user={false} />
+                    </div>
+                  </div>
+                </div>
+              );
+            }
+
+            return (
+              <div key={row.id} className="flex justify-start py-4 border-b border-slate-100/50 last:border-0">
+                <div className="flex gap-4 w-full max-w-[85%]">
+                  <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-blue-50 text-accent border border-blue-100/50">
+                    <Bot className="h-4.5 w-4.5" />
+                  </div>
+                  <div className="flex-1 space-y-2">
+                    <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">Jobest AI</div>
+                    <div className="text-slate-800 text-sm leading-relaxed">
+                      <MarkdownMessage content={row.content} user={false} />
+                    </div>
+                    
+                    {msgTraces && msgTraces.length > 0 && (
+                      <div className="mt-3">
                         <LiveAgentPlan
                           traces={msgTraces}
                           isResponding={isResponding && rowIndex === rows.length - 1}
                           toolSteps={msgTraces.length}
-                          defaultCollapsed={rowIndex < latestAssistantIndex}
+                          defaultCollapsed={rowIndex < latestAssIndex}
                         />
                       </div>
                     )}
-                  </motion.div>
-                );
-              })}
-
-              {!allMessages.length ? (
-                <div className="rounded-[1.6rem] border border-dashed border-slate-200 bg-slate-50 p-5">
-                  <div className="text-sm leading-7 text-slate-600">
-                    Ask the copilot to inspect workspace data or prepare an action. It uses typed tools, records every execution, and only mutates workspace state after confirmation.
-                  </div>
-                  <div className="mt-4 rounded-[1.25rem] border border-slate-200 bg-white p-4 shadow-[0_14px_30px_rgba(15,23,42,0.05)]">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">Try this</div>
-                      <button
-                        type="button"
-                        onClick={() => pickSuggestion(suggestionIndex + 1)}
-                        className="rounded-full border border-slate-200 px-2.5 py-1 text-[11px] font-semibold text-slate-500 transition hover:border-blue-200 hover:bg-blue-50 hover:text-accent"
-                      >
-                        Another prompt
-                      </button>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setMessage(suggestions[suggestionIndex])}
-                      className="mt-3 w-full rounded-[1rem] bg-[linear-gradient(135deg,#eff6ff_0%,#ffffff_100%)] px-4 py-4 text-left transition hover:ring-1 hover:ring-blue-200"
-                    >
-                      <div className="text-sm font-semibold text-slate-900">{suggestions[suggestionIndex]}</div>
-                      <div className="mt-1 text-xs leading-5 text-slate-500">Load this into the composer, edit it if needed, then send.</div>
-                    </button>
-                  </div>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {quickStarts.map((item) => (
-                      <button
-                        key={item.label}
-                        type="button"
-                        onClick={() => setMessage(item.prompt)}
-                        className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-medium text-slate-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-accent"
-                      >
-                        {item.label}
-                      </button>
-                    ))}
                   </div>
                 </div>
-              ) : null}
+              </div>
+            );
+          })}
 
-              {session?.pending_actions.map((action) => (
-                <div key={action.id} className="rounded-[1.4rem] border border-amber-200 bg-amber-50 p-4">
-                  <div className="flex items-center gap-2 text-sm font-semibold text-amber-800">
-                    <ShieldCheck className="h-4 w-4" /> Confirmation required
-                  </div>
-                  <div className="mt-2 text-xs leading-6 text-amber-900">{action.summary}</div>
-                  <div className="mt-3 flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => resolveAction(action.id, true)}
-                      className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white"
-                    >
-                      <CheckCircle2 className="h-3.5 w-3.5" /> Confirm
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => resolveAction(action.id, false)}
-                      className="inline-flex items-center gap-1 rounded-lg border border-amber-300 bg-white px-3 py-2 text-xs font-semibold text-amber-800"
-                    >
-                      <XCircle className="h-3.5 w-3.5" /> Cancel
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
+          {/* Empty Conversation Welcome State */}
+          {!allMessages.length && (
+            <div className="flex flex-col items-center justify-center py-12 px-4 max-w-xl mx-auto text-center space-y-8">
+              <div className="space-y-3">
+                <h2 className="text-2xl font-bold text-slate-800 tracking-tight">How can I help today?</h2>
+                <p className="text-sm text-slate-500 leading-relaxed">
+                  Ask me to inspect workspace data, perform resume triage, analyze candidates, or coordinate recruitment workflows.
+                </p>
+              </div>
 
-            {error ? <div className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">{error}</div> : null}
-
-            <div className="mt-4 border-t border-slate-100 pt-4">
-              {files.length > 0 ? <div className="mb-2 text-xs text-slate-500">{files.length} PDF attachment(s) ready for upload.</div> : null}
-              <div className="flex gap-2">
-                <div className="relative shrink-0" ref={contextRef}>
+              {/* restored suggestions showcase card */}
+              <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-xs text-left">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Try this prompt</div>
                   <button
                     type="button"
-                    onClick={() => setContextOpen((current) => !current)}
-                    className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                    onClick={() => pickSuggestion(suggestionIndex + 1)}
+                    className="rounded-full border border-slate-200 px-2.5 py-1 text-[11px] font-semibold text-slate-500 transition hover:border-blue-200 hover:bg-blue-50 hover:text-accent shadow-2xs bg-white"
                   >
-                    <BriefcaseBusiness className="h-4 w-4 text-accent" />
-                    Context
-                    <ChevronDown className="h-3.5 w-3.5" />
+                    Rotate prompt
                   </button>
-                  {contextOpen ? (
-                    <div className="absolute bottom-14 left-0 z-30 w-[280px] rounded-2xl border border-slate-200 bg-white p-3 shadow-xl">
-                      <div className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Chat scope</div>
-                      <select
-                        value={selectedJobId}
-                        onChange={(event) => {
-                          setSelectedJobId(event.target.value);
-                          setContextOpen(false);
-                        }}
-                        className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                      >
-                        <option value="">Workspace-wide</option>
-                        {jobs.map((job) => (
-                          <option key={job.id} value={job.id}>
-                            {job.title}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  ) : null}
                 </div>
-
-                <label className="grid h-11 w-11 shrink-0 cursor-pointer place-items-center rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50">
-                  <FileUp className="h-4 w-4" />
-                  <input
-                    type="file"
-                    multiple
-                    accept=".pdf,application/pdf"
-                    className="hidden"
-                    onChange={(event) => {
-                      addFiles(Array.from(event.target.files || []));
-                      event.target.value = "";
-                    }}
-                  />
-                </label>
-
-                <input
-                  value={message}
-                  onChange={(event) => setMessage(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" && !event.shiftKey) {
-                      event.preventDefault();
-                      send();
-                    }
-                  }}
-                  placeholder="Ask Jobest to search, plan, or run an action..."
-                  className="min-w-0 flex-1 rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-accent"
-                />
-
                 <button
                   type="button"
-                  disabled={pending || isResponding}
-                  onClick={send}
-                  className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-accent text-white disabled:opacity-60"
+                  onClick={() => setMessage(suggestions[suggestionIndex])}
+                  className="mt-3.5 w-full rounded-xl bg-slate-50/50 hover:bg-blue-50/20 border border-slate-100 hover:border-blue-100 p-4 text-left transition"
                 >
-                  {isResponding ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                  <div className="text-sm font-semibold text-slate-800">{suggestions[suggestionIndex]}</div>
+                  <div className="mt-1 text-xs text-slate-500 leading-relaxed">Load this into the composer, edit it if needed, then send.</div>
                 </button>
               </div>
-              <div className="mt-2 text-[11px] text-slate-500">
-                Active scope: {selectedJobId ? jobs.find((job) => job.id === selectedJobId)?.title || "Selected posting" : "Workspace-wide"}
-              </div>
-              <div className="mt-3 flex flex-wrap items-center gap-2">
+              
+              <div className="flex flex-wrap items-center justify-center gap-2">
                 {quickStarts.map((item) => (
                   <button
                     key={item.label}
@@ -785,18 +627,106 @@ export default function AiCopilotPage() {
                     {item.label}
                   </button>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {/* Pending Actions Confirmation Banner */}
+          {session?.pending_actions.map((action) => (
+            <div key={action.id} className="rounded-xl border border-amber-200 bg-amber-50/60 p-4 shadow-sm backdrop-blur-xs max-w-2xl mx-auto">
+              <div className="flex items-center gap-2 text-sm font-semibold text-amber-800">
+                <ShieldCheck className="h-4 w-4 text-amber-600" /> Confirmation required
+              </div>
+              <div className="mt-1.5 text-xs leading-relaxed text-amber-900">{action.summary}</div>
+              <div className="mt-3 flex gap-2">
                 <button
                   type="button"
-                  onClick={() => pickSuggestion(suggestionIndex + 1)}
-                  className="rounded-full border border-dashed border-slate-300 bg-slate-50 px-3 py-1.5 text-[11px] font-medium text-slate-500 transition hover:border-blue-200 hover:bg-blue-50 hover:text-accent"
+                  onClick={() => resolveAction(action.id, true)}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-emerald-700 transition"
                 >
-                  Rotate prompt
+                  <CheckCircle2 className="h-3.5 w-3.5" /> Confirm
+                </button>
+                <button
+                  type="button"
+                  onClick={() => resolveAction(action.id, false)}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-amber-200 bg-white px-3 py-1.5 text-xs font-semibold text-amber-800 shadow-xs hover:bg-slate-50 transition"
+                >
+                  <XCircle className="h-3.5 w-3.5" /> Cancel
                 </button>
               </div>
             </div>
-          </div>
-        </Panel>
+          ))}
+        </div>
 
+        {/* Input Scope & Attachments Panel */}
+        <div className="px-5 py-4 border-t border-slate-100 bg-white shrink-0 space-y-3">
+          {/* File input (programmatically clicked by AIPromptBox) */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept=".pdf,application/pdf"
+            className="hidden"
+            onChange={(event) => {
+              addFiles(Array.from(event.target.files || []));
+              event.target.value = "";
+            }}
+          />
+
+          {/* Attached Files List */}
+          <AnimatePresence>
+            {files.length > 0 && (
+              <motion.div 
+                className="flex gap-2 flex-wrap"
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+              >
+                {files.map((file, index) => (
+                  <motion.div
+                    key={index}
+                    className="flex items-center gap-2 text-xs bg-slate-50 border border-slate-200 py-1 px-2.5 rounded-lg text-slate-600 shadow-2xs"
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.95 }}
+                  >
+                    <span className="font-semibold truncate max-w-[180px]">{file.name}</span>
+                    <button 
+                      type="button"
+                      onClick={() => setFiles(prev => prev.filter((_, i) => i !== index))}
+                      className="text-slate-400 hover:text-slate-600 transition-colors"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </motion.div>
+                ))}
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          <div className="flex items-center justify-between">
+            {error && (
+              <div className="text-[11px] font-semibold text-red-600 bg-red-50 px-2 py-0.5 rounded border border-red-100">
+                {error}
+              </div>
+            )}
+          </div>
+
+          {/* Claude-style AIPromptBox (Light Themed) */}
+          <div>
+            <AIPromptBox
+              value={message}
+              onChange={setMessage}
+              onSubmit={send}
+              onAttachFile={() => fileInputRef.current?.click()}
+              isLoading={pending || isResponding}
+              selectedJobId={selectedJobId}
+              onJobIdChange={setSelectedJobId}
+              jobs={jobs}
+              placeholder="Ask Jobest to search, plan, or run an action..."
+            />
+          </div>
+        </div>
       </div>
     </AppShell>
   );
