@@ -230,6 +230,8 @@ export type JobPostingRecord = {
   hiring_context: string;
   company_priority?: string | null;
   status: string;
+  public_application_url: string;
+  public_applications_enabled: boolean;
   must_have_skills: string[];
   nice_to_have_skills: string[];
   created_at: string;
@@ -262,6 +264,11 @@ export type CandidateDetail = {
   job_posting_id: string;
   job_posting_title: string;
   display_name: string;
+  first_name?: string | null;
+  last_name?: string | null;
+  email?: string | null;
+  phone_number?: string | null;
+  external_id_text?: string | null;
   resume_text: string;
   upload_status: string;
   analysis_status: string;
@@ -500,4 +507,18 @@ export type AgentChatTurn = {
   session: AgentChatSession;
   assistant_message: AgentChatMessage;
   pending_action?: AgentPendingAction | null;
+};
+
+export type PublicJobPosting = {
+  title: string;
+  summary: string;
+  company_priority?: string | null;
+  applications_open: boolean;
+  closed_message?: string | null;
+};
+
+export type PublicApplyResponse = {
+  message: string;
+  applicant_name: string;
+  job_title: string;
 };

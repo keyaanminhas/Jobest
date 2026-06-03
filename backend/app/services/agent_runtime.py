@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import os
 import re
+import shutil
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -13,6 +16,7 @@ from app.models import (
     Candidate,
     CandidateAnalysisRun,
     CandidateFinalOutput,
+    CandidateLink,
     CandidateStageOutput,
     CandidateTriage,
     JobPosting,
@@ -42,6 +46,7 @@ TOOLS = [
     ToolSpec("get_job_insights", "read", "Summarize top, completed, or final-report-ready candidates for one job posting."),
     ToolSpec("get_workspace_summary", "read", "Summarize job and candidate coverage across the workspace."),
     ToolSpec("get_runtime_settings_safe", "read", "Read the recruiter-safe runtime settings and visible provider configuration."),
+    ToolSpec("get_public_application_link", "read", "Read the public application link and open/closed sharing status for one job posting."),
     ToolSpec("find_unsupported_claims", "read", "Find candidates whose evidence stage flagged unsupported claims for a query."),
     ToolSpec("find_risk_flags", "read", "Find candidates whose latest risk stage reported major risks."),
     ToolSpec("get_analysis_queue", "read", "Inspect queued and running analysis counts."),
@@ -49,13 +54,22 @@ TOOLS = [
     ToolSpec("run_triage_for_job", "write_safe", "Recompute triage for every candidate in one posting."),
     ToolSpec("run_candidate_full_analysis", "write_safe", "Queue full analysis for candidate_ids or all candidates in a posting."),
     ToolSpec("run_stage_on_candidates", "write_safe", "Queue a prerequisite-aware refresh focused on one named pipeline stage."),
+    ToolSpec("upload_candidate_pdfs_to_job", "write_safe", "Copy existing candidate PDF-backed profiles into one target job posting and rerun triage there."),
+    ToolSpec("upload_candidate_pdfs_to_multiple_jobs", "write_safe", "Copy existing candidate PDF-backed profiles into multiple target job postings and rerun triage for each destination."),
+    ToolSpec("duplicate_candidate_to_job", "write_safe", "Duplicate an existing candidate into another job posting using the stored PDF and resume text, then rerun triage there."),
+    ToolSpec("move_candidate_to_job", "write_safe", "Move an existing candidate into another job posting and reset role-specific analysis outputs before rerunning triage."),
     ToolSpec("update_runtime_settings_safe", "write_safe", "Update parallel_agents_limit, retry_attempts, or retry_delay_seconds only."),
     ToolSpec("update_job_posting", "write_safe", "Update title, description, hiring_context, company_priority, status, or must_have_skills/nice_to_have_skills of a job posting."),
+    ToolSpec("update_public_application_access", "write_safe", "Open or close public applications for a job posting without changing the public link."),
     ToolSpec("generate_outreach_email", "read", "Generate a personalized outreach or rejection email for a candidate. Arguments: candidate_id (required), email_type ('outreach' or 'rejection', optional)."),
     ToolSpec("compare_candidates", "read", "Compare multiple candidates side-by-side and provide a shortlist recommendation. Arguments: candidate_ids (list of string, required), job_posting_id (string, optional)."),
     ToolSpec("generate_targeted_interview_questions", "read", "Generate targeted probing interview questions based on candidate unsupported claims and risk flags. Arguments: candidate_id (required)."),
 ]
 TOOL_MAP = {tool.name: tool for tool in TOOLS}
+
+
+def _frontend_app_url() -> str:
+    return os.getenv("FRONTEND_APP_URL", "http://localhost:3000").strip().rstrip("/")
 
 PIPELINE_STAGES = {
     "jd_deconstruction",
@@ -380,12 +394,15 @@ class RecruiterAgentRuntime:
 
         posting = None
         posting_id = normalized_args.get("job_posting_id") if tool_name else None
-        if tool_name in {"list_candidates", "run_triage_for_job", "run_candidate_full_analysis", "run_stage_on_candidates", "get_job_insights", "update_job_posting"}:
+        if tool_name in {"list_candidates", "run_triage_for_job", "run_candidate_full_analysis", "run_stage_on_candidates", "get_job_insights", "update_job_posting", "get_public_application_link", "update_public_application_access", "duplicate_candidate_to_job", "move_candidate_to_job"}:
             posting = await self._resolve_posting(db, user_id, content, session_context, history)
             posting_id = posting_id or session_context.get("job_posting_id") or (posting.id if posting else None)
             if posting_id:
-                normalized_args["job_posting_id"] = posting_id
-        if tool_name == "get_job_posting":
+                if tool_name in {"duplicate_candidate_to_job", "move_candidate_to_job"}:
+                    normalized_args["target_job_posting_id"] = normalized_args.get("target_job_posting_id") or posting_id
+                else:
+                    normalized_args["job_posting_id"] = posting_id
+        if tool_name in {"get_job_posting", "get_public_application_link"}:
             posting = await self._resolve_posting(db, user_id, content, session_context, history)
             posting_id = posting_id or session_context.get("job_posting_id") or (posting.id if posting else None)
             if posting_id:
@@ -402,7 +419,7 @@ class RecruiterAgentRuntime:
         if tool_name == "list_candidates" and ("completed analysis" in lower or "completed candidates" in lower):
             normalized_args["completed_only"] = True
 
-        if tool_name in {"get_candidate_report", "run_candidate_full_analysis", "run_stage_on_candidates"}:
+        if tool_name in {"get_candidate_report", "run_candidate_full_analysis", "run_stage_on_candidates", "duplicate_candidate_to_job", "move_candidate_to_job"}:
             candidate = await self._resolve_candidate(
                 db,
                 user_id,
@@ -416,6 +433,8 @@ class RecruiterAgentRuntime:
                 normalized_args["candidate_id"] = candidate_id
             if tool_name in {"run_candidate_full_analysis", "run_stage_on_candidates"} and candidate_id and not normalized_args.get("candidate_ids"):
                 normalized_args["candidate_ids"] = [candidate_id]
+            if tool_name in {"duplicate_candidate_to_job", "move_candidate_to_job"} and candidate_id:
+                normalized_args["candidate_id"] = candidate_id
         if tool_name == "get_candidate_detail":
             candidate = await self._resolve_candidate(
                 db,
@@ -734,6 +753,12 @@ class RecruiterAgentRuntime:
             return {"tool_name": "get_workspace_summary", "arguments": {}, "answer": "", "planner": "fallback"}
         if any(token in lower for token in ("list jobs", "show jobs", "job postings")):
             return {"tool_name": "list_job_postings", "arguments": {}, "answer": "", "planner": "fallback"}
+        if any(token in lower for token in ("shareable link", "public application link", "public link", "application link", "share link", "sharing status")) and posting_id:
+            return {"tool_name": "get_public_application_link", "arguments": {"job_posting_id": posting_id}, "answer": "", "planner": "fallback"}
+        if any(token in lower for token in ("stop sharing", "close applications", "close application form", "stop taking applications")) and posting_id:
+            return {"tool_name": "update_public_application_access", "arguments": {"job_posting_id": posting_id, "enabled": False}, "answer": "", "planner": "fallback"}
+        if any(token in lower for token in ("resume sharing", "reopen applications", "open applications", "start sharing", "enable application link")) and posting_id:
+            return {"tool_name": "update_public_application_access", "arguments": {"job_posting_id": posting_id, "enabled": True}, "answer": "", "planner": "fallback"}
         if any(token in lower for token in ("computer science related", "software related", "tech related", "engineering related")) and "job" in lower:
             return {"tool_name": "list_job_postings", "arguments": {"classification_hint": "cs_related"}, "answer": "", "planner": "fallback"}
         if any(token in lower for token in ("read the database", "job coverage", "workspace summary", "summarize workspace")):
@@ -919,9 +944,13 @@ class RecruiterAgentRuntime:
             return {
                 "tool_name": None,
                 "arguments": {"job_posting_id": posting_id} if posting_id else {},
-                "answer": f"Attach the PDF files in the chat composer and target {target}. I will upload them through the candidate upload flow once the files are attached.",
+                "answer": f"Attach the PDF files in the chat composer and target {target}. I can upload them to the selected posting, or to multiple matching postings if your prompt names a group like all robotics jobs.",
                 "planner": "fallback",
             }
+        if any(token in lower for token in ("duplicate candidate", "copy candidate", "copy this candidate")) and candidate_id and posting_id:
+            return {"tool_name": "duplicate_candidate_to_job", "arguments": {"candidate_id": candidate_id, "target_job_posting_id": posting_id}, "answer": "", "planner": "fallback"}
+        if any(token in lower for token in ("move candidate", "move this candidate", "reassign candidate", "move to this job")) and candidate_id and posting_id:
+            return {"tool_name": "move_candidate_to_job", "arguments": {"candidate_id": candidate_id, "target_job_posting_id": posting_id}, "answer": "", "planner": "fallback"}
         if posting_id or candidate_id:
             stage = next((name for name in PIPELINE_STAGES if name.replace("_", " ") in lower), "")
             if stage and any(token in lower for token in ("run", "refresh", "rerun", "stage", "review", "fetch")):
@@ -1010,6 +1039,8 @@ class RecruiterAgentRuntime:
             return await self._get_workspace_summary(db, user_id)
         if tool_name == "get_runtime_settings_safe":
             return await self._get_runtime_settings_safe(db, user_id)
+        if tool_name == "get_public_application_link":
+            return await self._get_public_application_link(db, user_id, str(arguments.get("job_posting_id") or ""))
         if tool_name == "find_unsupported_claims":
             return await self._find_unsupported_claims(db, user_id, str(arguments.get("query") or ""), str(arguments.get("job_posting_id") or ""))
         if tool_name == "find_risk_flags":
@@ -1022,8 +1053,18 @@ class RecruiterAgentRuntime:
             return await self._run_triage(db, user_id, str(arguments.get("job_posting_id") or ""))
         if tool_name in {"run_candidate_full_analysis", "run_stage_on_candidates"}:
             return await self._queue_analysis(db, user_id, arguments, focused_stage=arguments.get("stage") if tool_name == "run_stage_on_candidates" else None)
+        if tool_name == "upload_candidate_pdfs_to_job":
+            return await self._upload_candidate_pdfs_to_job(db, user_id, arguments)
+        if tool_name == "upload_candidate_pdfs_to_multiple_jobs":
+            return await self._upload_candidate_pdfs_to_multiple_jobs(db, user_id, arguments)
+        if tool_name == "duplicate_candidate_to_job":
+            return await self._duplicate_candidate_to_job(db, user_id, arguments)
+        if tool_name == "move_candidate_to_job":
+            return await self._move_candidate_to_job(db, user_id, arguments)
         if tool_name == "update_runtime_settings_safe":
             return await self._update_runtime_settings(db, user_id, arguments)
+        if tool_name == "update_public_application_access":
+            return await self._update_public_application_access(db, user_id, arguments)
         if tool_name == "update_job_posting":
             return await self._update_job_posting(db, user_id, arguments)
         if tool_name == "generate_outreach_email":
@@ -1397,6 +1438,16 @@ class RecruiterAgentRuntime:
             "current_candidate_id": snapshot["current"].candidate_id if snapshot.get("current") else None,
         }
 
+    async def _get_public_application_link(self, db: AsyncSession, user_id: str, posting_id: str) -> dict[str, Any]:
+        posting = await self._owned_posting(db, user_id, posting_id)
+        return {
+            "job_posting_id": posting.id,
+            "title": posting.title,
+            "public_application_url": f"{_frontend_app_url()}/apply/{posting.public_application_token}",
+            "public_applications_enabled": bool(posting.public_applications_enabled),
+            "status": posting.status,
+        }
+
     async def _create_job_posting(self, db: AsyncSession, user_id: str, arguments: dict[str, Any]) -> dict[str, Any]:
         title = str(arguments.get("title") or "").strip()
         description = str(arguments.get("job_description") or arguments.get("description") or "").strip()
@@ -1448,6 +1499,189 @@ class RecruiterAgentRuntime:
             db.add(triage)
         await db.commit()
         return {"triaged": len(candidates), "job_posting_id": posting.id}
+
+    async def _owned_candidate(self, db: AsyncSession, user_id: str, candidate_id: str) -> Candidate:
+        candidate = await db.scalar(
+            select(Candidate)
+            .join(JobPosting, Candidate.job_posting_id == JobPosting.id)
+            .where(Candidate.id == candidate_id, JobPosting.user_id == user_id)
+            .options(selectinload(Candidate.links), selectinload(Candidate.triage), selectinload(Candidate.final_output))
+        )
+        if candidate is None:
+            raise ValueError("Candidate not found in this workspace.")
+        return candidate
+
+    async def _rerun_triage_for_candidate(self, db: AsyncSession, posting: JobPosting, candidate: Candidate) -> CandidateTriage:
+        must_have = [item.skill_name for item in posting.skills if item.skill_type == "must_have"]
+        nice_to_have = [item.skill_name for item in posting.skills if item.skill_type == "nice_to_have"]
+        result = await score_candidate_triage(
+            llm_client=self.llm,
+            candidate_name=candidate.display_name,
+            resume_text=candidate.resume_text,
+            title=posting.title,
+            job_description=posting.job_description,
+            must_have_skills=must_have,
+            nice_to_have_skills=nice_to_have,
+        )
+        triage = candidate.triage or CandidateTriage(candidate_id=candidate.id)
+        triage.keyword_match_score = result["keyword_match_score"]
+        triage.llm_triage_score = result["llm_triage_score"]
+        triage.triage_score = result["triage_score"]
+        triage.triage_summary = result["triage_summary"]
+        triage.triage_status = result["triage_status"]
+        triage.rank_last_computed_at = datetime.utcnow()
+        db.add(triage)
+        return triage
+
+    async def _clone_candidate_into_posting(
+        self,
+        db: AsyncSession,
+        *,
+        source_candidate: Candidate,
+        target_posting: JobPosting,
+        uploader_user_id: str,
+    ) -> Candidate:
+        new_candidate = Candidate(
+            job_posting_id=target_posting.id,
+            uploaded_by_user_id=uploader_user_id,
+            display_name=source_candidate.display_name,
+            first_name=source_candidate.first_name,
+            last_name=source_candidate.last_name,
+            email=source_candidate.email,
+            phone_number=source_candidate.phone_number,
+            external_id_text=source_candidate.external_id_text,
+            resume_file_path="",
+            resume_sha256=source_candidate.resume_sha256,
+            resume_text=source_candidate.resume_text,
+            upload_status="completed",
+            analysis_status="not_started",
+        )
+        db.add(new_candidate)
+        await db.flush()
+
+        source_path = Path(source_candidate.resume_file_path)
+        target_dir = source_path.parent
+        if source_candidate.resume_file_path:
+            target_dir = Path(source_candidate.resume_file_path).parents[1] / target_posting.id if len(Path(source_candidate.resume_file_path).parents) >= 2 else Path(source_candidate.resume_file_path).parent
+        target_dir.mkdir(parents=True, exist_ok=True)
+        target_path = target_dir / f"{new_candidate.id}.pdf"
+        if source_path.exists():
+            shutil.copy2(source_path, target_path)
+            new_candidate.resume_file_path = str(target_path)
+        else:
+            new_candidate.resume_file_path = source_candidate.resume_file_path
+
+        for link in source_candidate.links:
+            db.add(CandidateLink(candidate_id=new_candidate.id, link_type=link.link_type, url=link.url))
+        await self._rerun_triage_for_candidate(db, target_posting, new_candidate)
+        return new_candidate
+
+    async def _reset_role_specific_outputs(self, db: AsyncSession, candidate: Candidate) -> None:
+        await db.execute(delete(CandidateStageOutput).where(CandidateStageOutput.analysis_run_id.in_(
+            select(CandidateAnalysisRun.id).where(CandidateAnalysisRun.candidate_id == candidate.id)
+        )))
+        await db.execute(delete(CandidateAnalysisRun).where(CandidateAnalysisRun.candidate_id == candidate.id))
+        await db.execute(delete(CandidateFinalOutput).where(CandidateFinalOutput.candidate_id == candidate.id))
+        candidate.analysis_status = "not_started"
+
+    async def _upload_candidate_pdfs_to_job(self, db: AsyncSession, user_id: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        target_posting_id = str(arguments.get("job_posting_id") or arguments.get("target_job_posting_id") or "").strip()
+        source_candidate_ids = [str(item).strip() for item in arguments.get("source_candidate_ids", []) if str(item).strip()]
+        if not target_posting_id or not source_candidate_ids:
+            raise ValueError("Uploading candidate PDFs to a job requires job_posting_id and source_candidate_ids.")
+        target_posting = await self._owned_posting(db, user_id, target_posting_id)
+        created: list[dict[str, Any]] = []
+        for candidate_id in source_candidate_ids:
+            source_candidate = await self._owned_candidate(db, user_id, candidate_id)
+            cloned = await self._clone_candidate_into_posting(
+                db,
+                source_candidate=source_candidate,
+                target_posting=target_posting,
+                uploader_user_id=user_id,
+            )
+            created.append({"candidate_id": cloned.id, "name": cloned.display_name})
+        await db.commit()
+        return {
+            "job_posting_id": target_posting.id,
+            "job_title": target_posting.title,
+            "uploaded_count": len(created),
+            "created_candidates": created,
+        }
+
+    async def _upload_candidate_pdfs_to_multiple_jobs(self, db: AsyncSession, user_id: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        target_job_posting_ids = [str(item).strip() for item in arguments.get("target_job_posting_ids", []) if str(item).strip()]
+        source_candidate_ids = [str(item).strip() for item in arguments.get("source_candidate_ids", []) if str(item).strip()]
+        if not target_job_posting_ids or not source_candidate_ids:
+            raise ValueError("Uploading candidate PDFs to multiple jobs requires target_job_posting_ids and source_candidate_ids.")
+        results: list[dict[str, Any]] = []
+        for posting_id in target_job_posting_ids:
+            result = await self._upload_candidate_pdfs_to_job(
+                db,
+                user_id,
+                {"job_posting_id": posting_id, "source_candidate_ids": source_candidate_ids},
+            )
+            results.append(result)
+        return {
+            "target_count": len(results),
+            "results": results,
+        }
+
+    async def _duplicate_candidate_to_job(self, db: AsyncSession, user_id: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        candidate_id = str(arguments.get("candidate_id") or "").strip()
+        target_posting_id = str(arguments.get("target_job_posting_id") or arguments.get("job_posting_id") or "").strip()
+        if not candidate_id or not target_posting_id:
+            raise ValueError("Duplicating a candidate requires candidate_id and target_job_posting_id.")
+        source_candidate = await self._owned_candidate(db, user_id, candidate_id)
+        target_posting = await self._owned_posting(db, user_id, target_posting_id)
+        cloned = await self._clone_candidate_into_posting(
+            db,
+            source_candidate=source_candidate,
+            target_posting=target_posting,
+            uploader_user_id=user_id,
+        )
+        await db.commit()
+        return {
+            "source_candidate_id": source_candidate.id,
+            "new_candidate_id": cloned.id,
+            "target_job_posting_id": target_posting.id,
+            "target_job_title": target_posting.title,
+            "candidate_name": cloned.display_name,
+        }
+
+    async def _move_candidate_to_job(self, db: AsyncSession, user_id: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        candidate_id = str(arguments.get("candidate_id") or "").strip()
+        target_posting_id = str(arguments.get("target_job_posting_id") or arguments.get("job_posting_id") or "").strip()
+        if not candidate_id or not target_posting_id:
+            raise ValueError("Moving a candidate requires candidate_id and target_job_posting_id.")
+        candidate = await self._owned_candidate(db, user_id, candidate_id)
+        target_posting = await self._owned_posting(db, user_id, target_posting_id)
+        source_posting_id = candidate.job_posting_id
+        candidate.job_posting_id = target_posting.id
+
+        source_path = Path(candidate.resume_file_path)
+        if source_path.exists():
+            target_dir = source_path.parents[1] / target_posting.id if len(source_path.parents) >= 2 else source_path.parent
+            target_dir.mkdir(parents=True, exist_ok=True)
+            target_path = target_dir / f"{candidate.id}.pdf"
+            if source_path != target_path:
+                shutil.copy2(source_path, target_path)
+                try:
+                    source_path.unlink()
+                except OSError:
+                    pass
+                candidate.resume_file_path = str(target_path)
+
+        await self._reset_role_specific_outputs(db, candidate)
+        await self._rerun_triage_for_candidate(db, target_posting, candidate)
+        await db.commit()
+        return {
+            "candidate_id": candidate.id,
+            "candidate_name": candidate.display_name,
+            "source_job_posting_id": source_posting_id,
+            "target_job_posting_id": target_posting.id,
+            "target_job_title": target_posting.title,
+            "moved": True,
+        }
 
     async def _queue_analysis(self, db: AsyncSession, user_id: str, arguments: dict[str, Any], focused_stage: str | None) -> dict[str, Any]:
         posting_id = str(arguments.get("job_posting_id") or "")
@@ -1561,6 +1795,21 @@ class RecruiterAgentRuntime:
             raise ValueError("No safe runtime settings were supplied.")
         await db.commit()
         return {"updated": changed}
+
+    async def _update_public_application_access(self, db: AsyncSession, user_id: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        posting_id = str(arguments.get("job_posting_id") or "").strip()
+        if not posting_id:
+            raise ValueError("Updating public application access requires job_posting_id.")
+        posting = await self._owned_posting(db, user_id, posting_id)
+        posting.public_applications_enabled = bool(arguments.get("enabled"))
+        await db.commit()
+        return {
+            "updated": True,
+            "job_posting_id": posting.id,
+            "title": posting.title,
+            "public_application_url": f"{_frontend_app_url()}/apply/{posting.public_application_token}",
+            "public_applications_enabled": bool(posting.public_applications_enabled),
+        }
 
     async def _update_job_posting(self, db: AsyncSession, user_id: str, arguments: dict[str, Any]) -> dict[str, Any]:
         posting_id = str(arguments.get("job_posting_id") or "").strip()

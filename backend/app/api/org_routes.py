@@ -12,7 +12,7 @@ from urllib.parse import urlencode, urlparse
 import httpx
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from fastapi import Request
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse, JSONResponse
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -50,6 +50,8 @@ from app.schemas.org import (
     LoginRequest,
     NotificationItemResponse,
     NotificationListResponse,
+    PublicApplyResponse,
+    PublicJobPostingResponse,
     RunningAgentItemResponse,
     SignupRequest,
     StartCandidateAnalysisResponse,
@@ -133,6 +135,10 @@ def _required_env(name: str) -> str:
 
 def _frontend_app_url() -> str:
     return os.getenv("FRONTEND_APP_URL", "http://localhost:3000").strip().rstrip("/")
+
+
+def _public_application_url(token: str) -> str:
+    return f"{_frontend_app_url()}/apply/{token}"
 
 
 def _chutes_scopes() -> str:
@@ -220,11 +226,20 @@ def _job_posting_to_response(posting: JobPosting) -> JobPostingResponse:
         hiring_context=posting.hiring_context,
         company_priority=posting.company_priority,
         status=posting.status,
+        public_application_url=_public_application_url(posting.public_application_token),
+        public_applications_enabled=bool(posting.public_applications_enabled),
         must_have_skills=must_have,
         nice_to_have_skills=nice_to_have,
         created_at=posting.created_at,
         updated_at=posting.updated_at,
     )
+
+
+def _public_job_summary(posting: JobPosting) -> str:
+    summary = (posting.job_description or "").strip()
+    if len(summary) > 320:
+        summary = summary[:317].rstrip() + "..."
+    return summary
 
 
 def _resume_url(candidate_id: str) -> str:
@@ -464,6 +479,24 @@ async def _get_owned_posting_or_404(db: AsyncSession, user_id: str, posting_id: 
     return posting
 
 
+async def _get_public_posting_by_token_or_404(db: AsyncSession, public_token: str) -> JobPosting:
+    posting = await db.scalar(
+        select(JobPosting)
+        .where(JobPosting.public_application_token == public_token)
+        .options(selectinload(JobPosting.skills), selectinload(JobPosting.owner))
+    )
+    if posting is None or posting.owner is None or posting.status != "active":
+        raise HTTPException(status_code=404, detail="Job posting not found")
+    return posting
+
+
+async def _get_public_posting_or_404(db: AsyncSession, public_token: str) -> JobPosting:
+    posting = await _get_public_posting_by_token_or_404(db, public_token)
+    if not posting.public_applications_enabled:
+        raise HTTPException(status_code=409, detail="The application form has been closed.")
+    return posting
+
+
 async def _get_owned_candidate_or_404(db: AsyncSession, user_id: str, candidate_id: str) -> Candidate:
     candidate = await db.scalar(
         select(Candidate)
@@ -511,6 +544,180 @@ async def _parallel_limit_for_user(user_id: str) -> int:
         if settings is None:
             return 1
         return _normalize_positive_int(settings.parallel_agents_limit, min_value=1, max_value=10)
+
+
+async def _ingest_candidate_pdf(
+    *,
+    db: AsyncSession,
+    posting: JobPosting,
+    uploader_user_id: str,
+    file: UploadFile,
+    display_name: str,
+    first_name: str | None = None,
+    last_name: str | None = None,
+    email: str | None = None,
+    phone_number: str | None = None,
+    external_id_text: str | None = None,
+    additional_urls: str | None = None,
+    additional_urls_by_filename: str | None = None,
+) -> Candidate:
+    must_have = [item.skill_name for item in posting.skills if item.skill_type == "must_have"]
+    nice_to_have = [item.skill_name for item in posting.skills if item.skill_type == "nice_to_have"]
+
+    try:
+        assert_pdf_upload(file.filename)
+        file_bytes = await file.read()
+        resume_text = extract_pdf_text(file_bytes)
+    except ResumeIngestionError as exc:
+        raise HTTPException(status_code=400, detail=f"{file.filename}: {exc}") from exc
+
+    candidate = Candidate(
+        job_posting_id=posting.id,
+        uploaded_by_user_id=uploader_user_id,
+        display_name=display_name,
+        first_name=first_name,
+        last_name=last_name,
+        email=email,
+        phone_number=phone_number,
+        external_id_text=external_id_text,
+        resume_file_path="",
+        resume_sha256=hashlib.sha256(file_bytes).hexdigest(),
+        resume_text=resume_text,
+        upload_status="completed",
+        analysis_status="not_started",
+    )
+    db.add(candidate)
+    await db.flush()
+
+    target_dir = UPLOADS_DIR / posting.user_id / posting.id
+    target_dir.mkdir(parents=True, exist_ok=True)
+    file_path = target_dir / f"{candidate.id}.pdf"
+    file_path.write_bytes(file_bytes)
+    candidate.resume_file_path = str(file_path)
+
+    links_map = _extract_links_for_file(
+        filename=file.filename or "",
+        additional_urls=additional_urls,
+        additional_urls_by_filename=additional_urls_by_filename,
+    )
+    extracted_urls = extract_professional_urls_from_pdf(file_bytes)
+    if extracted_urls:
+        extracted_map = _extract_professional_links(" ".join(extracted_urls))
+        links_map = _merge_link_maps(links_map, extracted_map)
+    for link_type, url in links_map.items():
+        db.add(CandidateLink(candidate_id=candidate.id, link_type=link_type, url=url))
+
+    triage = await score_candidate_triage(
+        llm_client=_triage_llm_client,
+        candidate_name=display_name,
+        resume_text=resume_text,
+        title=posting.title,
+        job_description=posting.job_description,
+        must_have_skills=must_have,
+        nice_to_have_skills=nice_to_have,
+    )
+    db.add(
+        CandidateTriage(
+            candidate_id=candidate.id,
+            keyword_match_score=triage["keyword_match_score"],
+            llm_triage_score=triage["llm_triage_score"],
+            triage_score=triage["triage_score"],
+            triage_summary=triage["triage_summary"],
+            triage_status=triage["triage_status"],
+            rank_last_computed_at=datetime.utcnow(),
+        )
+    )
+    return candidate
+
+
+async def _run_candidate_triage_only(
+    *,
+    db: AsyncSession,
+    posting: JobPosting,
+    candidate: Candidate,
+) -> None:
+    must_have = [item.skill_name for item in posting.skills if item.skill_type == "must_have"]
+    nice_to_have = [item.skill_name for item in posting.skills if item.skill_type == "nice_to_have"]
+    triage = await score_candidate_triage(
+        llm_client=_triage_llm_client,
+        candidate_name=candidate.display_name,
+        resume_text=candidate.resume_text,
+        title=posting.title,
+        job_description=posting.job_description,
+        must_have_skills=must_have,
+        nice_to_have_skills=nice_to_have,
+    )
+    db.add(
+        CandidateTriage(
+            candidate_id=candidate.id,
+            keyword_match_score=triage["keyword_match_score"],
+            llm_triage_score=triage["llm_triage_score"],
+            triage_score=triage["triage_score"],
+            triage_summary=triage["triage_summary"],
+            triage_status=triage["triage_status"],
+            rank_last_computed_at=datetime.utcnow(),
+        )
+    )
+
+
+async def _ingest_candidate_pdf_without_triage(
+    *,
+    db: AsyncSession,
+    posting: JobPosting,
+    uploader_user_id: str,
+    file: UploadFile,
+    display_name: str,
+    first_name: str | None = None,
+    last_name: str | None = None,
+    email: str | None = None,
+    phone_number: str | None = None,
+    external_id_text: str | None = None,
+    additional_urls: str | None = None,
+    additional_urls_by_filename: str | None = None,
+) -> Candidate:
+    try:
+        assert_pdf_upload(file.filename)
+        file_bytes = await file.read()
+        resume_text = extract_pdf_text(file_bytes)
+    except ResumeIngestionError as exc:
+        raise HTTPException(status_code=400, detail=f"{file.filename}: {exc}") from exc
+
+    candidate = Candidate(
+        job_posting_id=posting.id,
+        uploaded_by_user_id=uploader_user_id,
+        display_name=display_name,
+        first_name=first_name,
+        last_name=last_name,
+        email=email,
+        phone_number=phone_number,
+        external_id_text=external_id_text,
+        resume_file_path="",
+        resume_sha256=hashlib.sha256(file_bytes).hexdigest(),
+        resume_text=resume_text,
+        upload_status="completed",
+        analysis_status="not_started",
+    )
+    db.add(candidate)
+    await db.flush()
+
+    target_dir = UPLOADS_DIR / posting.user_id / posting.id
+    target_dir.mkdir(parents=True, exist_ok=True)
+    file_path = target_dir / f"{candidate.id}.pdf"
+    file_path.write_bytes(file_bytes)
+    candidate.resume_file_path = str(file_path)
+
+    links_map = _extract_links_for_file(
+        filename=file.filename or "",
+        additional_urls=additional_urls,
+        additional_urls_by_filename=additional_urls_by_filename,
+    )
+    extracted_urls = extract_professional_urls_from_pdf(file_bytes)
+    if extracted_urls:
+        extracted_map = _extract_professional_links(" ".join(extracted_urls))
+        links_map = _merge_link_maps(links_map, extracted_map)
+    for link_type, url in links_map.items():
+        db.add(CandidateLink(candidate_id=candidate.id, link_type=link_type, url=url))
+    return candidate
 
 
 def _provider_from_settings(settings: UserAgentSettings) -> ProviderConfig | None:
@@ -893,6 +1100,8 @@ async def update_job_posting(
         posting.company_priority = payload.company_priority
     if payload.status is not None:
         posting.status = payload.status
+    if payload.public_applications_enabled is not None:
+        posting.public_applications_enabled = payload.public_applications_enabled
 
     if payload.must_have_skills is not None or payload.nice_to_have_skills is not None:
         await db.execute(delete(JobPostingSkill).where(JobPostingSkill.job_posting_id == posting.id))
@@ -928,9 +1137,6 @@ async def upload_candidates(
     current_user: User = Depends(get_current_user),
 ) -> UploadCandidatesResponse:
     posting = await _get_owned_posting_or_404(db, current_user.id, job_posting_id)
-    must_have = [item.skill_name for item in posting.skills if item.skill_type == "must_have"]
-    nice_to_have = [item.skill_name for item in posting.skills if item.skill_type == "nice_to_have"]
-
     for file in cv_pdfs:
         try:
             assert_pdf_upload(file.filename)
@@ -938,62 +1144,20 @@ async def upload_candidates(
             resume_text = extract_pdf_text(file_bytes)
         except ResumeIngestionError as exc:
             raise HTTPException(status_code=400, detail=f"{file.filename}: {exc}") from exc
-
         display_name = derive_candidate_name(
             resume_text=resume_text,
             filename=file.filename,
             name_override=None,
         )
-        candidate = Candidate(
-            job_posting_id=posting.id,
-            uploaded_by_user_id=current_user.id,
+        await file.seek(0)
+        await _ingest_candidate_pdf(
+            db=db,
+            posting=posting,
+            uploader_user_id=current_user.id,
+            file=file,
             display_name=display_name,
-            resume_file_path="",
-            resume_sha256=hashlib.sha256(file_bytes).hexdigest(),
-            resume_text=resume_text,
-            upload_status="completed",
-            analysis_status="not_started",
-        )
-        db.add(candidate)
-        await db.flush()
-
-        target_dir = UPLOADS_DIR / current_user.id / posting.id
-        target_dir.mkdir(parents=True, exist_ok=True)
-        file_path = target_dir / f"{candidate.id}.pdf"
-        file_path.write_bytes(file_bytes)
-        candidate.resume_file_path = str(file_path)
-
-        links_map = _extract_links_for_file(
-            filename=file.filename or "",
             additional_urls=additional_urls,
             additional_urls_by_filename=additional_urls_by_filename,
-        )
-        extracted_urls = extract_professional_urls_from_pdf(file_bytes)
-        if extracted_urls:
-            extracted_map = _extract_professional_links(" ".join(extracted_urls))
-            links_map = _merge_link_maps(links_map, extracted_map)
-        for link_type, url in links_map.items():
-            db.add(CandidateLink(candidate_id=candidate.id, link_type=link_type, url=url))
-
-        triage = await score_candidate_triage(
-            llm_client=_triage_llm_client,
-            candidate_name=display_name,
-            resume_text=resume_text,
-            title=posting.title,
-            job_description=posting.job_description,
-            must_have_skills=must_have,
-            nice_to_have_skills=nice_to_have,
-        )
-        db.add(
-            CandidateTriage(
-                candidate_id=candidate.id,
-                keyword_match_score=triage["keyword_match_score"],
-                llm_triage_score=triage["llm_triage_score"],
-                triage_score=triage["triage_score"],
-                triage_summary=triage["triage_summary"],
-                triage_status=triage["triage_status"],
-                rank_last_computed_at=datetime.utcnow(),
-            )
         )
 
     await db.commit()
@@ -1015,6 +1179,83 @@ async def upload_candidates(
         uploaded_count=len(cv_pdfs),
         candidates=[_candidate_to_list_item(item) for item in candidates],
     )
+
+
+@router.get("/public/jobs/{public_token}", response_model=PublicJobPostingResponse)
+async def get_public_job_posting(
+    public_token: str,
+    db: AsyncSession = Depends(get_db_session),
+) -> JSONResponse:
+    posting = await _get_public_posting_by_token_or_404(db, public_token)
+    applications_open = bool(posting.public_applications_enabled)
+    payload = PublicJobPostingResponse(
+        title=posting.title,
+        summary=_public_job_summary(posting),
+        company_priority=posting.company_priority,
+        applications_open=applications_open,
+        closed_message=None if applications_open else "The application form has been closed.",
+    )
+    response = JSONResponse(payload.model_dump())
+    response.headers["X-Robots-Tag"] = "noindex, nofollow"
+    return response
+
+
+@router.post("/public/jobs/{public_token}/apply", response_model=PublicApplyResponse)
+async def apply_to_public_job(
+    public_token: str,
+    first_name: str = Form(...),
+    last_name: str = Form(...),
+    phone_number: str = Form(...),
+    email: str = Form(...),
+    external_id_text: str | None = Form(default=None),
+    cv_pdf: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db_session),
+) -> JSONResponse:
+    posting = await _get_public_posting_or_404(db, public_token)
+    display_name = f"{first_name.strip()} {last_name.strip()}".strip()
+    if not display_name:
+        raise HTTPException(status_code=400, detail="First name and last name are required.")
+    candidate = await _ingest_candidate_pdf_without_triage(
+        db=db,
+        posting=posting,
+        uploader_user_id=posting.user_id,
+        file=cv_pdf,
+        display_name=display_name,
+        first_name=first_name.strip(),
+        last_name=last_name.strip(),
+        email=email.strip(),
+        phone_number=phone_number.strip(),
+        external_id_text=(external_id_text or "").strip() or None,
+    )
+    await db.commit()
+
+    async def _background_public_triage(candidate_id: str, posting_id: str) -> None:
+        async with SessionLocal() as session:
+            candidate_row = await session.scalar(select(Candidate).where(Candidate.id == candidate_id))
+            posting_row = await session.scalar(
+                select(JobPosting)
+                .where(JobPosting.id == posting_id)
+                .options(selectinload(JobPosting.skills))
+            )
+            if candidate_row is None or posting_row is None:
+                return
+            existing = await session.scalar(select(CandidateTriage).where(CandidateTriage.candidate_id == candidate_id))
+            if existing is not None:
+                return
+            await _run_candidate_triage_only(db=session, posting=posting_row, candidate=candidate_row)
+            await session.commit()
+
+    asyncio.create_task(_background_public_triage(candidate.id, posting.id))
+
+    response = JSONResponse(
+        PublicApplyResponse(
+            message="Application received.",
+            applicant_name=display_name,
+            job_title=posting.title,
+        ).model_dump()
+    )
+    response.headers["X-Robots-Tag"] = "noindex, nofollow"
+    return response
 
 
 @router.get("/job-postings/{job_posting_id}/candidates", response_model=list[CandidateListItemResponse])
@@ -1732,6 +1973,11 @@ async def get_candidate_detail(
         job_posting_id=candidate.job_posting_id,
         job_posting_title=candidate.job_posting.title if candidate.job_posting else "",
         display_name=candidate.display_name,
+        first_name=candidate.first_name,
+        last_name=candidate.last_name,
+        email=candidate.email,
+        phone_number=candidate.phone_number,
+        external_id_text=candidate.external_id_text,
         resume_text=candidate.resume_text,
         upload_status=candidate.upload_status,
         analysis_status=candidate.analysis_status,

@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 from collections.abc import AsyncGenerator
+import secrets
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
@@ -71,3 +72,46 @@ async def init_db_schema() -> None:
         for column, statement in alter_statements:
             if column not in existing:
                 await connection.exec_driver_sql(statement)
+
+        posting_pragma = await connection.exec_driver_sql("PRAGMA table_info(job_postings)")
+        posting_existing = {row[1] for row in posting_pragma.fetchall()}
+        if "public_application_token" not in posting_existing:
+            await connection.exec_driver_sql(
+                "ALTER TABLE job_postings ADD COLUMN public_application_token VARCHAR(64)"
+            )
+        if "public_applications_enabled" not in posting_existing:
+            await connection.exec_driver_sql(
+                "ALTER TABLE job_postings ADD COLUMN public_applications_enabled BOOLEAN NOT NULL DEFAULT 1"
+            )
+        candidates_pragma = await connection.exec_driver_sql("PRAGMA table_info(candidates)")
+        candidate_existing = {row[1] for row in candidates_pragma.fetchall()}
+        candidate_alters = [
+            ("first_name", "ALTER TABLE candidates ADD COLUMN first_name VARCHAR(255)"),
+            ("last_name", "ALTER TABLE candidates ADD COLUMN last_name VARCHAR(255)"),
+            ("email", "ALTER TABLE candidates ADD COLUMN email VARCHAR(255)"),
+            ("phone_number", "ALTER TABLE candidates ADD COLUMN phone_number VARCHAR(64)"),
+            ("external_id_text", "ALTER TABLE candidates ADD COLUMN external_id_text VARCHAR(255)"),
+        ]
+        for column, statement in candidate_alters:
+            if column not in candidate_existing:
+                await connection.exec_driver_sql(statement)
+
+        rows = await connection.exec_driver_sql(
+            "SELECT id FROM job_postings WHERE public_application_token IS NULL OR public_application_token = ''"
+        )
+        missing_ids = [row[0] for row in rows.fetchall()]
+        for posting_id in missing_ids:
+            await connection.exec_driver_sql(
+                "UPDATE job_postings SET public_application_token = :token WHERE id = :posting_id",
+                {"token": secrets.token_urlsafe(24), "posting_id": posting_id},
+            )
+        await connection.exec_driver_sql(
+            "CREATE UNIQUE INDEX IF NOT EXISTS ix_job_postings_public_application_token ON job_postings(public_application_token)"
+        )
+        await connection.exec_driver_sql(
+            """
+            UPDATE job_postings
+            SET public_applications_enabled = 1
+            WHERE public_applications_enabled IS NULL
+            """
+        )

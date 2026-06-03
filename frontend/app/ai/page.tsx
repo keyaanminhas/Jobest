@@ -47,6 +47,56 @@ const quickStarts = [
   { label: "Analyze batch", prompt: "Analyze all candidates for this posting." },
 ];
 
+function isPdfFile(file: File) {
+  return file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+}
+
+function normalizeText(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function inferUploadTargets(prompt: string, jobs: JobPostingRecord[], selectedJobId: string) {
+  const lower = prompt.toLowerCase();
+  const normalizedPrompt = normalizeText(prompt);
+  const explicitMatches = jobs.filter((job) => {
+    const normalizedTitle = normalizeText(job.title);
+    return normalizedTitle.length > 0 && normalizedPrompt.includes(normalizedTitle);
+  });
+  if (explicitMatches.length > 0) {
+    return explicitMatches;
+  }
+
+  const allGroupMatch = lower.match(/\ball\s+([a-z0-9/& +.-]+?)\s+(jobs|job postings|postings|roles)\b/);
+  if (allGroupMatch) {
+    const query = normalizeText(allGroupMatch[1] || "");
+    const matches = jobs.filter((job) =>
+      normalizeText([job.title, job.hiring_context || "", job.job_description || ""].join(" ")).includes(query),
+    );
+    if (matches.length > 0) return matches;
+  }
+
+  const keywordGroups = ["robotics", "mechatronics", "cyber security", "security", "ai", "backend", "software", "saas"];
+  for (const keyword of keywordGroups) {
+    if (lower.includes(keyword) && lower.includes("all")) {
+      const matches = jobs.filter((job) =>
+        normalizeText([job.title, job.hiring_context || "", job.job_description || ""].join(" ")).includes(normalizeText(keyword)),
+      );
+      if (matches.length > 0) return matches;
+    }
+  }
+
+  if (selectedJobId) {
+    const selected = jobs.find((job) => job.id === selectedJobId);
+    if (selected) return [selected];
+  }
+  return [];
+}
+
+function isUploadIntent(prompt: string) {
+  const lower = prompt.toLowerCase();
+  return ["upload", "attach", "add this resume", "add this cv", "assign this resume", "assign this cv"].some((token) => lower.includes(token));
+}
+
 function messageBubble(row: AgentChatMessage) {
   return row.role === "user"
     ? "bg-accent text-white shadow-[0_18px_40px_rgba(29,78,216,0.18)]"
@@ -114,6 +164,25 @@ export default function AiCopilotPage() {
   const messagesViewportRef = useRef<HTMLDivElement | null>(null);
   const historyRef = useRef<HTMLDivElement | null>(null);
   const contextRef = useRef<HTMLDivElement | null>(null);
+
+  function addFiles(nextFiles: File[]) {
+    const pdfFiles = nextFiles.filter(isPdfFile);
+    if (pdfFiles.length !== nextFiles.length) {
+      setError("Only PDF files can be attached in AI copilot.");
+    } else {
+      setError("");
+    }
+    if (pdfFiles.length === 0) return;
+    setFiles((current) => {
+      const deduped = [...current];
+      for (const file of pdfFiles) {
+        if (!deduped.some((item) => item.name === file.name && item.size === file.size && item.lastModified === file.lastModified)) {
+          deduped.push(file);
+        }
+      }
+      return deduped;
+    });
+  }
 
   async function refreshSessionList() {
     setSessions(await listAgentChatSessions());
@@ -242,6 +311,10 @@ export default function AiCopilotPage() {
   function send() {
     const text = message.trim();
     if (!text && files.length === 0) return;
+    if (files.some((file) => !isPdfFile(file))) {
+      setError("Only PDF files can be attached in AI copilot.");
+      return;
+    }
     setError("");
     setMessage("");
     const now = new Date().toISOString();
@@ -274,18 +347,44 @@ export default function AiCopilotPage() {
         }
         let uploadNote = "";
         if (files.length > 0) {
-          if (!selectedJobId) throw new Error("Select a job posting before attaching candidate PDFs.");
+          const targets = inferUploadTargets(text, jobs, selectedJobId);
+          if (targets.length === 0) throw new Error("Select a job posting or name a target role before attaching candidate PDFs.");
           if (!window.confirm(`Upload ${files.length} candidate PDF file(s) to the selected posting?`)) {
             setOptimisticMessages([]);
             setIsResponding(false);
+            setMessage(text);
             return;
           }
-          const uploaded = await uploadCandidates(selectedJobId, files);
-          uploadNote = ` Uploaded ${uploaded.uploaded_count} candidate PDF file(s) to the selected posting.`;
+          const uploadResults = [];
+          for (const target of targets) {
+            uploadResults.push(await uploadCandidates(target.id, files));
+          }
+          const totalUploaded = uploadResults.reduce((sum, row) => sum + row.uploaded_count, 0);
+          const targetNames = targets.map((target) => target.title);
+          uploadNote = ` Uploaded ${files.length} candidate PDF file(s) across ${targetNames.length} posting(s): ${targetNames.join(", ")}.`;
+          setFiles([]);
+          if (!text || isUploadIntent(text)) {
+            const uploadedAssistant: AgentChatMessage = {
+              id: `upload-only-${Date.now()}`,
+              role: "assistant",
+              content: `Uploaded ${totalUploaded} candidate PDF submission(s) across ${targetNames.length} posting(s): ${targetNames.join(", ")}. You can now ask me to triage, compare, or analyze them.`,
+              metadata: {},
+              created_at: new Date().toISOString(),
+            };
+            setSession({
+              ...active,
+              messages: [...(active.messages || []), optimisticUser, uploadedAssistant],
+              traces: active.traces || [],
+              pending_actions: active.pending_actions || [],
+            });
+            setOptimisticMessages([]);
+            setIsResponding(false);
+            await refreshSessionList();
+            return;
+          }
         }
         const turn = await sendAgentChatMessage(active.id, `${text || "Review the attached candidate PDFs."}${uploadNote}`);
         setSession(turn.session);
-        setFiles([]);
         setOptimisticMessages([]);
         await refreshSessionList();
       } catch (exc) {
@@ -590,7 +689,10 @@ export default function AiCopilotPage() {
                     multiple
                     accept=".pdf,application/pdf"
                     className="hidden"
-                    onChange={(event) => setFiles(Array.from(event.target.files || []))}
+                    onChange={(event) => {
+                      addFiles(Array.from(event.target.files || []));
+                      event.target.value = "";
+                    }}
                   />
                 </label>
 

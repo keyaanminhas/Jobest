@@ -236,6 +236,31 @@ def _result_summary(tool_name: str, result: dict) -> str:
             f"parallel agents `{result.get('parallel_agents_limit', 0)}`, retry attempts `{result.get('retry_attempts', 0)}`, "
             f"retry delay `{result.get('retry_delay_seconds', 0)} seconds`."
         )
+    if tool_name == "get_public_application_link":
+        return (
+            f"Public application link for `{result.get('title', 'Unknown posting')}`:\n\n"
+            f"- Link: {result.get('public_application_url', 'Unavailable')}\n"
+            f"- Applications open: {'yes' if result.get('public_applications_enabled') else 'no'}\n"
+            f"- Posting status: `{result.get('status', 'unknown')}`"
+        )
+    if tool_name == "upload_candidate_pdfs_to_job":
+        created = result.get("created_candidates", [])
+        return (
+            f"Uploaded candidate PDFs into `{result.get('job_title', 'Unknown posting')}`.\n\n"
+            f"- Created candidates: **{result.get('uploaded_count', len(created))}**\n"
+            + "\n".join(f"- {row.get('name', 'Unknown candidate')} (`{row.get('candidate_id', '')}`)" for row in created[:15])
+        )
+    if tool_name == "upload_candidate_pdfs_to_multiple_jobs":
+        rows = result.get("results", [])
+        return (
+            f"Uploaded candidate PDFs across **{result.get('target_count', len(rows))}** job postings.\n\n"
+            + "\n".join(f"- `{row.get('job_title', 'Unknown posting')}`: {row.get('uploaded_count', 0)} created" for row in rows[:15])
+        )
+    if tool_name == "duplicate_candidate_to_job":
+        return (
+            f"Duplicated `{result.get('candidate_name', 'Unknown candidate')}` into `{result.get('target_job_title', 'Unknown posting')}`.\n\n"
+            f"- New candidate id: `{result.get('new_candidate_id', '')}`"
+        )
     if tool_name == "generate_outreach_email":
         subject = result.get("email_subject") or ""
         body = result.get("email_body") or ""
@@ -248,6 +273,17 @@ def _result_summary(tool_name: str, result: dict) -> str:
             f"{body}\n\n"
             f"---\n"
             f"*You can copy this text directly to send to the candidate.*"
+        )
+    if tool_name == "update_public_application_access":
+        return (
+            f"Public applications for `{result.get('title', 'Unknown posting')}` are now "
+            f"**{'open' if result.get('public_applications_enabled') else 'closed'}**.\n\n"
+            f"Share link: {result.get('public_application_url', 'Unavailable')}"
+        )
+    if tool_name == "move_candidate_to_job":
+        return (
+            f"Moved `{result.get('candidate_name', 'Unknown candidate')}` into `{result.get('target_job_title', 'Unknown posting')}`.\n\n"
+            "Role-specific analysis artifacts were reset and triage was rerun for the destination posting."
         )
     if tool_name == "compare_candidates":
         job_title = result.get("job_title") or "the job posting"

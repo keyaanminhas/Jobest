@@ -15,7 +15,6 @@ import {
   Search,
   Sparkles,
   Users,
-  Bot,
 } from "lucide-react";
 import { getCurrentUser, getNotifications, logout, markAllNotificationsRead, markNotificationRead } from "@/lib/api";
 import { NotificationItem } from "@/lib/types";
@@ -28,7 +27,6 @@ const navItems = [
   { href: "/jobs/new", label: "New Posting", icon: BriefcaseBusiness },
   { href: "/candidates", label: "Candidates", icon: Users },
   { href: "/reports", label: "Reports", icon: ChartColumnBig },
-  { href: "/agents", label: "Agents", icon: Bot },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 

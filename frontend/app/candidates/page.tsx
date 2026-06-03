@@ -1,7 +1,7 @@
 "use client";
 
 import { AppShell } from "@/components/app-shell";
-import { EmptyState, Panel, RecommendationBadge, ScoreRing } from "@/components/ui";
+import { EmptyState, Panel, RecommendationBadge, ScoreRing, TriageBandBadge } from "@/components/ui";
 import { analyzeCandidate, listAllCandidates } from "@/lib/api";
 import { CandidateListItem } from "@/lib/types";
 import Link from "next/link";
@@ -147,9 +147,15 @@ export default function CandidatesIndexPage() {
                   <div className="font-semibold text-slate-900">{candidate.display_name}</div>
                   <div className="text-xs text-slate-500">Applicant for: {candidate.job_posting_title}</div>
                 </div>
-                <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">{candidate.current_score_type} score</div>
+                <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                  {candidate.current_score_type === "triage" ? "triage band" : "final score"}
+                </div>
                 <div className="flex lg:justify-center">
-                  <ScoreRing score={candidate.current_score_type === "triage" ? (candidate.current_score / 80) * 100 : candidate.current_score} />
+                  {candidate.current_score_type === "triage" ? (
+                    <TriageBandBadge score={candidate.current_score} />
+                  ) : (
+                    <ScoreRing score={candidate.current_score} />
+                  )}
                 </div>
                 <div>{candidate.recommendation ? <RecommendationBadge recommendation={candidate.recommendation} /> : <span className="text-xs text-slate-500">Pending</span>}</div>
                 <div className="flex flex-wrap justify-start gap-2 lg:justify-end">

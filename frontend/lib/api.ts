@@ -24,11 +24,13 @@ import {
   HiringRunRecord,
   JobPostingRecord,
   NotificationListResponse,
+  PublicApplyResponse,
+  PublicJobPosting,
   SingleCvRunResponse,
   UpdateAgentSettingsPayload,
 } from "@/lib/types";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL?.trim() || "";
 const API_KEY = process.env.NEXT_PUBLIC_API_KEY ?? "change-this-demo-key";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -141,7 +143,37 @@ export async function getJobPosting(jobPostingId: string) {
   return requestOrg<JobPostingRecord>(`/api/job-postings/${jobPostingId}`);
 }
 
-export async function updateJobPosting(jobPostingId: string, payload: Partial<CreateJobPostingPayload> & { status?: string }) {
+export async function getPublicJobPosting(token: string) {
+  return request<PublicJobPosting>(`/api/public/jobs/${token}`);
+}
+
+export async function applyToPublicJob(token: string, payload: {
+  firstName: string;
+  lastName: string;
+  phoneNumber: string;
+  email: string;
+  externalIdText?: string;
+  file: File;
+}) {
+  const body = new FormData();
+  body.append("first_name", payload.firstName.trim());
+  body.append("last_name", payload.lastName.trim());
+  body.append("phone_number", payload.phoneNumber.trim());
+  body.append("email", payload.email.trim());
+  if (payload.externalIdText?.trim()) {
+    body.append("external_id_text", payload.externalIdText.trim());
+  }
+  body.append("cv_pdf", payload.file);
+  return request<PublicApplyResponse>(`/api/public/jobs/${token}/apply`, {
+    method: "POST",
+    body,
+  });
+}
+
+export async function updateJobPosting(
+  jobPostingId: string,
+  payload: Partial<CreateJobPostingPayload> & { status?: string; public_applications_enabled?: boolean },
+) {
   return requestOrg<JobPostingRecord>(`/api/job-postings/${jobPostingId}`, {
     method: "PATCH",
     body: JSON.stringify(payload),

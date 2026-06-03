@@ -1,5 +1,6 @@
 from datetime import datetime
 from uuid import uuid4
+import secrets
 
 from sqlalchemy import JSON, DateTime, Float, ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -9,6 +10,10 @@ from app.db import Base
 
 def _uuid() -> str:
     return str(uuid4())
+
+
+def _public_token() -> str:
+    return secrets.token_urlsafe(24)
 
 
 class User(Base):
@@ -59,6 +64,8 @@ class JobPosting(Base):
     hiring_context: Mapped[str] = mapped_column(Text)
     company_priority: Mapped[str | None] = mapped_column(String(255), nullable=True)
     status: Mapped[str] = mapped_column(String(32), default="active")
+    public_application_token: Mapped[str] = mapped_column(String(64), unique=True, index=True, default=_public_token)
+    public_applications_enabled: Mapped[bool] = mapped_column(default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -85,6 +92,11 @@ class Candidate(Base):
     job_posting_id: Mapped[str] = mapped_column(ForeignKey("job_postings.id"), index=True)
     uploaded_by_user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
     display_name: Mapped[str] = mapped_column(String(255))
+    first_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    last_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    email: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    phone_number: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    external_id_text: Mapped[str | None] = mapped_column(String(255), nullable=True)
     resume_file_path: Mapped[str] = mapped_column(Text)
     resume_sha256: Mapped[str] = mapped_column(String(64), index=True)
     resume_text: Mapped[str] = mapped_column(Text)

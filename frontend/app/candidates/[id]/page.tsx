@@ -1,7 +1,7 @@
 "use client";
 
 import { AppShell } from "@/components/app-shell";
-import { JsonAccordion, Panel, RecommendationBadge, ScoreRing, StatusBadge } from "@/components/ui";
+import { JsonAccordion, Panel, RecommendationBadge, ScoreRing, StatusBadge, TriageBandBadge, getTriageBand } from "@/components/ui";
 import { analyzeCandidate, getCandidate, getCandidateAnalysis, getCandidateResumeBlob } from "@/lib/api";
 import { CandidateAnalysisResponse, CandidateDetail } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -175,6 +175,8 @@ export default function CandidatePage() {
   const progressPercent = Math.round((completedCount / pipelineRail.length) * 100);
   const currentScore =
     candidate?.current_score_type === "triage" ? ((candidate?.current_score ?? 0) / 80) * 100 : candidate?.current_score ?? 0;
+  const currentTriageBand = getTriageBand(candidate?.current_score ?? 0);
+  const rawTriageBand = getTriageBand(candidate?.triage_score ?? 0);
 
   return (
     <AppShell
@@ -282,21 +284,27 @@ export default function CandidatePage() {
 
         <Panel title="Run Summary" subtitle="Candidate status, score, and orchestration context.">
           <div className="grid gap-4 lg:grid-cols-[280px_1fr_280px]">
-          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">Match Score</div>
-                <div className="mt-1 font-heading text-3xl font-extrabold text-slate-950">
-                  {formatScore(candidate?.current_score, "0.0")}
-                  <span className="ml-1 text-sm font-semibold text-slate-400">
-                    {candidate?.current_score_type === "triage" ? "/80" : "/100"}
-                  </span>
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                  {candidate?.current_score_type === "triage" ? "Match Band" : "Match Score"}
                 </div>
-              </div>
-              <ScoreRing score={currentScore} />
+                <div className="mt-1 font-heading text-3xl font-extrabold text-slate-950">
+                  {candidate?.current_score_type === "triage" ? currentTriageBand.label : formatScore(candidate?.current_score, "0.0")}
+                  {candidate?.current_score_type === "final" ? <span className="ml-1 text-sm font-semibold text-slate-400">/100</span> : null}
+                </div>
+                </div>
+              {candidate?.current_score_type === "triage" ? <TriageBandBadge score={candidate?.current_score ?? 0} /> : <ScoreRing score={currentScore} />}
             </div>
             <div className="mt-4 h-2 overflow-hidden rounded-full bg-white">
-              <div className="h-full rounded-full bg-accent transition-all duration-500" style={{ width: `${Math.min(currentScore, 100)}%` }} />
+              <div
+                className="h-full rounded-full transition-all duration-500"
+                style={{
+                  width: `${Math.min(currentScore, 100)}%`,
+                  backgroundColor: candidate?.current_score_type === "triage" ? currentTriageBand.accent : "#2563eb",
+                }}
+              />
             </div>
           </div>
 
@@ -320,8 +328,8 @@ export default function CandidatePage() {
               <dd className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-accent">{currentStageLabel}</dd>
             </div>
             <div className="flex items-center justify-between gap-4">
-              <dt className="text-slate-500">Triage score</dt>
-              <dd className="font-semibold text-slate-900">{formatScore(candidate?.triage_score, "0.0")} / 80</dd>
+              <dt className="text-slate-500">Triage band</dt>
+              <dd className={cn("rounded-full px-3 py-1 text-xs font-semibold", rawTriageBand.track, rawTriageBand.text)}>{rawTriageBand.label}</dd>
             </div>
             <div className="flex items-center justify-between gap-4">
               <dt className="text-slate-500">Final score</dt>
