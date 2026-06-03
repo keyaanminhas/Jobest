@@ -544,14 +544,14 @@ async def send_message(
 
         signature = json.dumps({"tool_name": tool_name, "arguments": arguments}, sort_keys=True, ensure_ascii=True)
         if signature in seen_read_signatures:
-            plan_answer = str(plan.get("answer") or "").strip()
-            if not plan_answer and tool_results:
+            if tool_results:
                 assistant_text = await runtime.answer_from_tool_results(
                     content=payload.content,
                     tool_results=tool_results,
                     provider_override=provider_override,
                 )
             else:
+                plan_answer = str(plan.get("answer") or "").strip()
                 assistant_text = plan_answer or "I reached the same read step twice and need a clearer target to continue."
             break
         seen_read_signatures.add(signature)
