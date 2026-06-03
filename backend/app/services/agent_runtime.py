@@ -323,6 +323,11 @@ class RecruiterAgentRuntime:
             r"(?i)^are there any candidates who mention\s+",
             r"(?i)^are there any candidates with\s+",
             r"(?i)^are there any candidates\s+",
+            r"(?i)^are there any\s+",
+            r"(?i)^show all candidates with\s+",
+            r"(?i)^show candidates with\s+",
+            r"(?i)^show all\s+",
+            r"(?i)^show\s+",
             r"(?i)^search resumes (?:for|with|about|mentioning)\s+",
             r"(?i)^search candidates (?:for|with|by|mentioning)\s+",
             r"(?i)^find candidates\s+(?:who\s+mention|who\s+have|who\s+claim|who|whose|with|for|that|mention|have)\s+",
@@ -348,6 +353,8 @@ class RecruiterAgentRuntime:
             r"(?i)\s+experience[.?!]*$",
             r"(?i)\s+evidence[.?!]*$",
             r"(?i)\s+claims?[.?!]*$",
+            r"(?i)\s+unsupported claims?[.?!]*$",
+            r"(?i)\s+lack of evidence[.?!]*$",
         ]
         for pattern in suffixes:
             query = re.sub(pattern, "", query).strip()
@@ -718,6 +725,16 @@ class RecruiterAgentRuntime:
         query_text = raw_query.strip().lower()
         if not query_text:
             raise ValueError("Query is required.")
+            
+        # Check if the query is just a generic question asking for all claims
+        generic_phrases = {
+            "", "unsupported claims", "unsupported claim", "unsupported", 
+            "lack evidence", "lack external evidence", "claims", "evidence", 
+            "all", "any", "candidate", "candidates", "lack", "lack of", "of"
+        }
+        words = [w.strip() for w in re.split(r"\s+", query_text) if w.strip()]
+        is_generic = not words or all(w in generic_phrases for w in words)
+
         candidate_query = (
             select(Candidate)
             .join(JobPosting, Candidate.job_posting_id == JobPosting.id)
@@ -748,7 +765,7 @@ class RecruiterAgentRuntime:
             for item in (evidence_stage.raw_output_json or {}).get("unsupported_claims", []):
                 claim = str(item.get("claim") or "")
                 reason = str(item.get("reason") or "")
-                if query_text not in f"{claim} {reason}".lower():
+                if not is_generic and query_text not in f"{claim} {reason}".lower():
                     continue
                 matches.append(
                     {
