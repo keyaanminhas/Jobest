@@ -197,6 +197,61 @@ def _result_summary(tool_name: str, result: dict) -> str:
             f"{result.get('completed_count', 0)} completed analyses.\n\n"
             + "\n".join(f"- {row['title']} (`{row['id']}`)" for row in postings[:12])
         )
+    if tool_name == "generate_outreach_email":
+        subject = result.get("email_subject") or ""
+        body = result.get("email_body") or ""
+        email_type = result.get("email_type", "outreach").title()
+        candidate = result.get("candidate_name") or "Candidate"
+        return (
+            f"### {email_type} Email Draft for {candidate}\n\n"
+            f"**Subject:** {subject}\n\n"
+            f"---\n\n"
+            f"{body}\n\n"
+            f"---\n"
+            f"*You can copy this text directly to send to the candidate.*"
+        )
+    if tool_name == "compare_candidates":
+        job_title = result.get("job_title") or "the job posting"
+        candidates = result.get("candidates", [])
+        comparison = result.get("comparison") or ""
+        recommended = result.get("recommended") or "None"
+        
+        matrix_rows = []
+        for c in candidates:
+            matrix_rows.append(f"| **{c.get('name')}** | {c.get('score', 'N/A')} | {c.get('verdict')} |")
+            
+        matrix_table = (
+            "| Candidate | Score | Brief Verdict |\n"
+            "| --- | --- | --- |\n"
+            + "\n".join(matrix_rows)
+        )
+        
+        return (
+            f"### Side-by-Side Candidate Comparison for `{job_title}`\n\n"
+            f"{matrix_table}\n\n"
+            f"#### Detailed Evaluation\n"
+            f"{comparison}\n\n"
+            f"**Shortlist Recommendation:** 🌟 **{recommended}**"
+        )
+    if tool_name == "generate_targeted_interview_questions":
+        candidate = result.get("candidate_name") or "Candidate"
+        questions = result.get("questions", [])
+        
+        question_list = []
+        for i, q in enumerate(questions, 1):
+            question_list.append(
+                f"{i}. **Area/Claim:** *{q.get('claim')}*\n"
+                f"   * **Question:** \"{q.get('question')}\"\n"
+                f"   * **Assessment Intent:** {q.get('intent')}\n"
+            )
+            
+        questions_markdown = "\n".join(question_list) if question_list else "No targeted questions were generated."
+        
+        return (
+            f"### Targeted Probing Interview Questions for {candidate}\n\n"
+            f"These questions focus on validating unsupported resume claims, resolving discrepancies, and checking risk flags:\n\n"
+            f"{questions_markdown}"
+        )
     return f"`{tool_name}` completed.\n\n```json\n{json.dumps(result, indent=2)}\n```"
 
 

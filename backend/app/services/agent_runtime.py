@@ -47,6 +47,9 @@ TOOLS = [
     ToolSpec("run_stage_on_candidates", "write_safe", "Queue a prerequisite-aware refresh focused on one named pipeline stage."),
     ToolSpec("update_runtime_settings_safe", "write_safe", "Update parallel_agents_limit, retry_attempts, or retry_delay_seconds only."),
     ToolSpec("update_job_posting", "write_safe", "Update title, description, hiring_context, company_priority, status, or must_have_skills/nice_to_have_skills of a job posting."),
+    ToolSpec("generate_outreach_email", "read", "Generate a personalized outreach or rejection email for a candidate. Arguments: candidate_id (required), email_type ('outreach' or 'rejection', optional)."),
+    ToolSpec("compare_candidates", "read", "Compare multiple candidates side-by-side and provide a shortlist recommendation. Arguments: candidate_ids (list of string, required), job_posting_id (string, optional)."),
+    ToolSpec("generate_targeted_interview_questions", "read", "Generate targeted probing interview questions based on candidate unsupported claims and risk flags. Arguments: candidate_id (required)."),
 ]
 TOOL_MAP = {tool.name: tool for tool in TOOLS}
 
@@ -454,6 +457,30 @@ class RecruiterAgentRuntime:
             return {"tool_name": "get_job_insights", "arguments": {"job_posting_id": posting_id, "mode": "job_report"}, "answer": "", "planner": "fallback"}
         if "report" in lower and candidate_id:
             return {"tool_name": "get_candidate_report", "arguments": {"candidate_id": candidate_id}, "answer": "", "planner": "fallback"}
+        if any(token in lower for token in ("outreach email", "rejection email", "draft email", "write email", "contact candidate", "candidate email")) and candidate_id:
+            email_type = "rejection" if "reject" in lower or "rejection" in lower else "outreach"
+            return {"tool_name": "generate_outreach_email", "arguments": {"candidate_id": candidate_id, "email_type": email_type}, "answer": "", "planner": "fallback"}
+        if any(token in lower for token in ("compare", "comparison", "side by side", "versus", "vs")):
+            c_ids = []
+            if posting_id:
+                candidates_pool = (await db.scalars(select(Candidate).where(Candidate.job_posting_id == posting_id))).all()
+                for c in candidates_pool:
+                    if self._normalize_text(c.display_name) in lower:
+                        c_ids.append(c.id)
+            if not c_ids and candidate_id:
+                c_ids.append(candidate_id)
+            if not c_ids and posting_id:
+                candidates_pool = (await db.scalars(
+                    select(Candidate)
+                    .join(CandidateTriage, Candidate.id == CandidateTriage.candidate_id)
+                    .where(Candidate.job_posting_id == posting_id)
+                    .order_by(CandidateTriage.triage_score.desc())
+                )).all()
+                c_ids = [c.id for c in candidates_pool[:3]]
+            if c_ids:
+                return {"tool_name": "compare_candidates", "arguments": {"candidate_ids": c_ids, "job_posting_id": posting_id}, "answer": "", "planner": "fallback"}
+        if any(token in lower for token in ("interview questions", "probe", "verify claims", "targeted questions", "probing questions")) and candidate_id:
+            return {"tool_name": "generate_targeted_interview_questions", "arguments": {"candidate_id": candidate_id}, "answer": "", "planner": "fallback"}
         if "lack evidence" in lower or "unsupported claim" in lower:
             query = self._extract_search_query(text)
             return {"tool_name": "find_unsupported_claims", "arguments": {"query": query or text, "job_posting_id": posting_id}, "answer": "", "planner": "fallback"}
@@ -548,6 +575,12 @@ class RecruiterAgentRuntime:
             return await self._update_runtime_settings(db, user_id, arguments)
         if tool_name == "update_job_posting":
             return await self._update_job_posting(db, user_id, arguments)
+        if tool_name == "generate_outreach_email":
+            return await self._generate_outreach_email(db, user_id, arguments)
+        if tool_name == "compare_candidates":
+            return await self._compare_candidates(db, user_id, arguments)
+        if tool_name == "generate_targeted_interview_questions":
+            return await self._generate_targeted_interview_questions(db, user_id, arguments)
         raise ValueError(f"Unknown tool: {tool_name}")
 
     async def _owned_posting(self, db: AsyncSession, user_id: str, posting_id: str) -> JobPosting:
@@ -972,3 +1005,190 @@ class RecruiterAgentRuntime:
 
         await db.commit()
         return {"updated": True, "job_posting_id": posting.id}
+
+    async def _generate_outreach_email(self, db: AsyncSession, user_id: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        candidate_id = str(arguments.get("candidate_id") or "").strip()
+        if not candidate_id:
+            raise ValueError("Candidate ID is required.")
+        email_type = str(arguments.get("email_type") or "outreach").strip().lower()
+        if email_type not in {"outreach", "rejection"}:
+            email_type = "outreach"
+
+        candidate = await db.scalar(
+            select(Candidate)
+            .join(JobPosting, Candidate.job_posting_id == JobPosting.id)
+            .where(Candidate.id == candidate_id, JobPosting.user_id == user_id)
+            .options(selectinload(Candidate.triage))
+        )
+        if candidate is None:
+            raise ValueError("Candidate not found in this workspace.")
+
+        posting = await db.scalar(
+            select(JobPosting).where(JobPosting.id == candidate.job_posting_id)
+        )
+        if posting is None:
+            raise ValueError("Job posting context not found.")
+
+        system_prompt = (
+            "You are a professional recruiter. Generate a personalized candidate email based on the candidate's profile "
+            "and job requirements. Output JSON only with keys: email_subject (string), email_body (string)."
+        )
+        payload = {
+            "email_type": email_type,
+            "candidate_name": candidate.display_name,
+            "resume_excerpt": candidate.resume_text[:4000],
+            "job_title": posting.title,
+            "job_description": posting.job_description[:4000],
+            "triage_score": candidate.triage.triage_score if candidate.triage else None,
+            "triage_summary": candidate.triage.triage_summary if candidate.triage else None,
+        }
+
+        result = await self.llm.call_agent("outreach_email_generator", system_prompt, payload, temperature=0.3)
+        return {
+            "candidate_id": candidate_id,
+            "candidate_name": candidate.display_name,
+            "email_type": email_type,
+            "email_subject": str(result.get("email_subject") or "Regarding your application"),
+            "email_body": str(result.get("email_body") or ""),
+        }
+
+    async def _compare_candidates(self, db: AsyncSession, user_id: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        candidate_ids = [str(c).strip() for c in arguments.get("candidate_ids", []) if str(c).strip()]
+        if not candidate_ids:
+            raise ValueError("Provide at least one candidate ID to compare.")
+
+        candidate_ids = candidate_ids[:5]
+
+        query = (
+            select(Candidate)
+            .join(JobPosting, Candidate.job_posting_id == JobPosting.id)
+            .where(Candidate.id.in_(candidate_ids), JobPosting.user_id == user_id)
+            .options(selectinload(Candidate.triage), selectinload(Candidate.final_output))
+        )
+        candidates = (await db.scalars(query)).all()
+        if not candidates:
+            raise ValueError("No matching candidates found in this workspace.")
+
+        job_posting_id = arguments.get("job_posting_id")
+        if not job_posting_id:
+            job_posting_id = candidates[0].job_posting_id
+
+        posting = await db.scalar(
+            select(JobPosting).where(JobPosting.id == job_posting_id, JobPosting.user_id == user_id)
+        )
+        if posting is None:
+            raise ValueError("Job posting not found.")
+
+        candidate_data = []
+        for c in candidates:
+            final_report_summary = ""
+            final_score = None
+            recommendation = None
+            if c.final_output:
+                final_score = (c.final_output.score_json or {}).get("final_score")
+                recommendation = (c.final_output.score_json or {}).get("recommendation")
+                final_report_summary = (c.final_output.report_json or {}).get("summary") or ""
+
+            candidate_data.append({
+                "id": c.id,
+                "name": c.display_name,
+                "triage_score": c.triage.triage_score if c.triage else None,
+                "triage_summary": c.triage.triage_summary if c.triage else None,
+                "final_score": final_score,
+                "recommendation": recommendation,
+                "final_report_summary": final_report_summary[:2000],
+            })
+
+        system_prompt = (
+            "You are a talent acquisition expert comparing candidates side-by-side. "
+            "Examine their scores, triage summary, and final recommendations. "
+            "Provide a side-by-side comparison matrix and a definitive shortlist recommendation. "
+            "Output JSON only with keys: candidates (list of objects with keys name, score, verdict), "
+            "comparison (detailed text comparison), recommended (name of recommended candidate)."
+        )
+        payload = {
+            "job_title": posting.title,
+            "job_description": posting.job_description[:4000],
+            "candidates": candidate_data,
+        }
+
+        result = await self.llm.call_agent("candidate_comparator", system_prompt, payload, temperature=0.2)
+        return {
+            "job_title": posting.title,
+            "candidates": result.get("candidates") or [],
+            "comparison": str(result.get("comparison") or ""),
+            "recommended": str(result.get("recommended") or ""),
+        }
+
+    async def _generate_targeted_interview_questions(self, db: AsyncSession, user_id: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        candidate_id = str(arguments.get("candidate_id") or "").strip()
+        if not candidate_id:
+            raise ValueError("Candidate ID is required.")
+
+        candidate = await db.scalar(
+            select(Candidate)
+            .join(JobPosting, Candidate.job_posting_id == JobPosting.id)
+            .where(Candidate.id == candidate_id, JobPosting.user_id == user_id)
+        )
+        if candidate is None:
+            raise ValueError("Candidate not found in this workspace.")
+
+        posting = await db.scalar(
+            select(JobPosting).where(JobPosting.id == candidate.job_posting_id)
+        )
+        if posting is None:
+            raise ValueError("Job posting not found.")
+
+        latest_run = await db.scalar(
+            select(CandidateAnalysisRun)
+            .where(CandidateAnalysisRun.candidate_id == candidate.id)
+            .order_by(CandidateAnalysisRun.completed_at.desc().nullslast(), CandidateAnalysisRun.id.desc())
+        )
+
+        unsupported_claims = []
+        risks = []
+
+        if latest_run:
+            evidence_stage = await db.scalar(
+                select(CandidateStageOutput)
+                .where(
+                    CandidateStageOutput.analysis_run_id == latest_run.id,
+                    CandidateStageOutput.stage_name.like("Candidate Evidence Agent%"),
+                )
+                .order_by(CandidateStageOutput.created_at.desc(), CandidateStageOutput.id.desc())
+            )
+            if evidence_stage:
+                unsupported_claims = (evidence_stage.raw_output_json or {}).get("unsupported_claims", [])
+
+            risk_stage = await db.scalar(
+                select(CandidateStageOutput)
+                .where(
+                    CandidateStageOutput.analysis_run_id == latest_run.id,
+                    CandidateStageOutput.stage_name.like("Risk & Contradiction Agent%"),
+                )
+                .order_by(CandidateStageOutput.created_at.desc(), CandidateStageOutput.id.desc())
+            )
+            if risk_stage:
+                risks = (risk_stage.raw_output_json or {}).get("risks", [])
+
+        system_prompt = (
+            "You are an elite technical interviewer preparing targeted questions for a candidate. "
+            "Analyze the candidate's resume, job posting title, unsupported claims from their evidence extraction stage, "
+            "and risk flags from the risk auditor. "
+            "Generate targeted probing interview questions. If no claims or risk flags exist, generate questions comparing the resume directly to the job description. "
+            "Output JSON only with key: questions (list of objects with keys claim, question, intent)."
+        )
+        payload = {
+            "candidate_name": candidate.display_name,
+            "job_title": posting.title,
+            "resume_excerpt": candidate.resume_text[:4000],
+            "unsupported_claims": unsupported_claims,
+            "risk_flags": risks,
+        }
+
+        result = await self.llm.call_agent("targeted_questions_generator", system_prompt, payload, temperature=0.3)
+        return {
+            "candidate_name": candidate.display_name,
+            "questions": result.get("questions") or [],
+        }
+
