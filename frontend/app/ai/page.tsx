@@ -2,6 +2,8 @@
 
 import { AppShell } from "@/components/app-shell";
 import { Panel } from "@/components/ui";
+import LiveAgentPlan from "@/components/ui/live-agent-plan";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   cancelAgentAction,
   confirmAgentAction,
@@ -12,7 +14,7 @@ import {
   sendAgentChatMessage,
   uploadCandidates,
 } from "@/lib/api";
-import { AgentChatMessage, AgentChatSession, AgentChatSessionSummary, JobPostingRecord } from "@/lib/types";
+import { AgentChatMessage, AgentChatSession, AgentChatSessionSummary, AgentToolTrace, JobPostingRecord } from "@/lib/types";
 import {
   Bot,
   BriefcaseBusiness,
@@ -146,6 +148,66 @@ function MarkdownMessage({ content, user }: { content: string; user: boolean }) 
   );
 }
 
+function associateTracesWithMessages(messages: AgentChatMessage[], traces: AgentToolTrace[]): Record<string, AgentToolTrace[]> {
+  const association: Record<string, AgentToolTrace[]> = {};
+
+  // Initialize association for all assistant messages
+  for (const msg of messages) {
+    if (msg.role === "assistant") {
+      association[msg.id] = [];
+    }
+  }
+
+  // Sort traces and assistant messages chronologically
+  const assistantMessages = messages
+    .filter((msg) => msg.role === "assistant")
+    .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+
+  const sortedTraces = [...traces].sort(
+    (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+  );
+
+  // For each trace, find the first assistant message that was created after (or at the same time as) the trace
+  let msgIdx = 0;
+  for (const trace of sortedTraces) {
+    const traceTime = new Date(trace.created_at).getTime();
+
+    // Move to the first assistant message that is at or after the trace timestamp
+    while (
+      msgIdx < assistantMessages.length &&
+      new Date(assistantMessages[msgIdx].created_at).getTime() < traceTime
+    ) {
+      msgIdx++;
+    }
+
+    if (msgIdx < assistantMessages.length) {
+      association[assistantMessages[msgIdx].id].push(trace);
+    } else {
+      // If no subsequent assistant message is found, assign it to the last assistant message
+      const lastMsg = assistantMessages[assistantMessages.length - 1];
+      if (lastMsg) {
+        association[lastMsg.id].push(trace);
+      }
+    }
+  }
+
+  // For active optimistic messages, if there is a loading optimistic assistant message at the end,
+  // it should display any new/unassociated traces (i.e. those created after the last real assistant message).
+  const lastMsg = messages[messages.length - 1];
+  if (lastMsg && lastMsg.role === "assistant" && lastMsg.metadata?.optimistic) {
+    const lastRealMsg = assistantMessages.find((m) => !m.metadata?.optimistic);
+    const cutTime = lastRealMsg ? new Date(lastRealMsg.created_at).getTime() : 0;
+
+    association[lastMsg.id] = sortedTraces.filter(
+      (t) => new Date(t.created_at).getTime() > cutTime
+    );
+  }
+
+  return association;
+}
+
+// ─── main page ────────────────────────────────────────────────────────────────
+
 export default function AiCopilotPage() {
   const [pending, startTransition] = useTransition();
   const [jobs, setJobs] = useState<JobPostingRecord[]>([]);
@@ -158,7 +220,6 @@ export default function AiCopilotPage() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [contextOpen, setContextOpen] = useState(false);
   const [suggestionIndex, setSuggestionIndex] = useState(0);
-  const [toolTraceOpen, setToolTraceOpen] = useState(false);
   const [optimisticMessages, setOptimisticMessages] = useState<AgentChatMessage[]>([]);
   const [isResponding, setIsResponding] = useState(false);
   const messagesViewportRef = useRef<HTMLDivElement | null>(null);
@@ -270,42 +331,10 @@ export default function AiCopilotPage() {
     return 0;
   }
 
-  function visibleTraceFeed() {
-    const steps = latestAssistantToolSteps();
-    return [...(session?.traces || [])].slice(0, steps > 0 ? steps : 0).reverse();
-  }
-
-  function currentToolStatus() {
-    const traces = visibleTraceFeed();
-    if (isResponding) {
-      return {
-        title: "Thinking",
-        subtitle: "Jobest is planning the next tool step.",
-      };
-    }
-    if (traces[0]) {
-      return {
-        title: traces[0].tool_name.replaceAll("_", " "),
-        subtitle: `${traces.length} tool step${traces.length === 1 ? "" : "s"} in this answer`,
-      };
-    }
-    return {
-      title: "Tool activity",
-      subtitle: "No tool steps yet",
-    };
-  }
-
   function pickSuggestion(index: number) {
     const normalized = ((index % suggestions.length) + suggestions.length) % suggestions.length;
     setSuggestionIndex(normalized);
     setMessage(suggestions[normalized]);
-  }
-
-  function shouldShowToolActivity(row: AgentChatMessage, rowIndex: number, messages: AgentChatMessage[]) {
-    if (row.role !== "assistant") return false;
-    if (rowIndex !== messages.length - 1) return false;
-    if (row.metadata?.loading && isResponding) return true;
-    return Number(row.metadata?.tool_steps || 0) > 0;
   }
 
   function send() {
@@ -334,7 +363,6 @@ export default function AiCopilotPage() {
     };
     setOptimisticMessages([optimisticUser, optimisticAssistant]);
     setIsResponding(true);
-    setToolTraceOpen(false);
 
     startTransition(async () => {
       try {
@@ -416,6 +444,18 @@ export default function AiCopilotPage() {
     });
   }
 
+  const allMessages = visibleMessages();
+  const msgTracesMap = associateTracesWithMessages(allMessages, session?.traces || []);
+
+  const latestAssistantIndex = (() => {
+    for (let index = allMessages.length - 1; index >= 0; index--) {
+      if (allMessages[index].role === "assistant") {
+        return index;
+      }
+    }
+    return -1;
+  })();
+
   return (
     <AppShell
       title="AI Recruiter Copilot"
@@ -468,7 +508,7 @@ export default function AiCopilotPage() {
                           }`}
                         >
                           <div className="font-semibold">{row.title}</div>
-                          <div className="mt-1 text-[10px] opacity-70">{new Date(row.updated_at).toLocaleString()}</div>
+                          <div className="mt-1 text-[10px] opacity-70" suppressHydrationWarning>{new Date(row.updated_at).toLocaleString()}</div>
                         </button>
                       ))}
                       {sessions.length === 0 ? <div className="text-xs text-slate-500">Start a new workspace session.</div> : null}
@@ -479,107 +519,120 @@ export default function AiCopilotPage() {
             </div>
 
             <div ref={messagesViewportRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-2 scroll-smooth">
-              {visibleMessages().map((row, rowIndex, rows) => (
-                <div key={row.id} className={`flex w-full ${senderRail(row)}`}>
-                  <div className={`flex max-w-[96%] items-end gap-3 ${row.role === "user" ? "flex-row-reverse" : ""}`}>
-                    <div
-                      className={`grid h-10 w-10 shrink-0 place-items-center rounded-2xl border ${
-                        row.role === "user"
-                          ? "border-blue-200 bg-blue-50 text-accent"
-                          : "border-slate-200 bg-white shadow-sm"
-                      }`}
+              {allMessages.map((row, rowIndex, rows) => {
+                const isUser = row.role === "user";
+                const isLoading = !!row.metadata?.loading;
+                const msgTraces = msgTracesMap[row.id] || [];
+
+                if (isLoading) {
+                  return (
+                    <motion.div
+                      key={row.id}
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.25, ease: [0.2, 0.65, 0.3, 0.9] }}
+                      className="space-y-3"
                     >
-                      {row.role === "user" ? (
-                        <span className="text-sm font-bold">KM</span>
-                      ) : (
-                        <Image
-                          src="/icon.svg"
-                          alt="Jobest"
-                          width={18}
-                          height={18}
-                          className="h-[18px] w-[18px]"
-                        />
-                      )}
-                    </div>
-
-                    <div className={`max-w-[92%] rounded-[1.35rem] px-4 py-3 text-sm leading-6 ${messageBubble(row)}`}>
-                      <div className={`mb-1 text-[11px] font-semibold uppercase tracking-[0.12em] ${row.role === "user" ? "text-blue-100" : "text-slate-400"}`}>
-                        {row.role === "user" ? "You" : "Jobest AI"}
-                      </div>
-                      <div>
-                        {row.metadata?.loading ? (
-                          <span className="inline-flex items-center gap-2 text-slate-600">
-                            <LoaderCircle className="h-4 w-4 animate-spin text-accent" />
-                            {row.content}
-                          </span>
-                        ) : (
-                          <MarkdownMessage content={row.content} user={row.role === "user"} />
-                        )}
-                      </div>
-
-                      {shouldShowToolActivity(row, rowIndex, rows) ? (
-                        <div className={`mt-3 rounded-[1rem] border px-3 py-2 ${row.role === "assistant" ? "border-slate-200 bg-white/80" : "border-white/20 bg-white/10"}`}>
-                          <button
-                            type="button"
-                            onClick={() => setToolTraceOpen((current) => !current)}
-                            className="flex w-full items-center justify-between gap-3 text-left"
-                          >
-                            <div className="min-w-0">
-                              <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">Tool activity</div>
-                              <div className="mt-1 flex items-center gap-2">
-                                {isResponding ? <LoaderCircle className="h-3.5 w-3.5 animate-spin text-accent" /> : <Wrench className="h-3.5 w-3.5 text-accent" />}
-                                <div className="min-w-0">
-                                  <div className="truncate text-[13px] font-semibold text-slate-900">{currentToolStatus().title}</div>
-                                  <div className="text-[10px] text-slate-500">{currentToolStatus().subtitle}</div>
-                                </div>
-                              </div>
+                      <div className="flex justify-start">
+                        <div className="flex items-end gap-3 max-w-[80%]">
+                          <div className="grid h-9 w-9 shrink-0 place-items-center rounded-2xl border border-slate-200 bg-white shadow-sm">
+                            <Image src="/icon.svg" alt="Jobest" width={18} height={18} className="h-[18px] w-[18px]" />
+                          </div>
+                          <div className="rounded-[1.35rem] border border-slate-200 bg-white px-4 py-3 shadow-sm">
+                            <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Jobest AI</div>
+                            <div className="flex items-center gap-3">
+                              <span className="flex items-center gap-1">
+                                {[0, 1, 2].map((i) => (
+                                  <span
+                                    key={i}
+                                    className="inline-block h-1.5 w-1.5 rounded-full bg-accent"
+                                    style={{
+                                      animation: `bounce 1.2s ease-in-out ${i * 0.2}s infinite`,
+                                    }}
+                                  />
+                                ))}
+                              </span>
+                              <span className="text-sm text-slate-500">Thinking…</span>
                             </div>
-                            <div className="inline-flex items-center gap-2 text-[10px] font-medium text-slate-500">
-                              {toolTraceOpen ? "Hide" : "Expand"}
-                              <ChevronDown className={`h-4 w-4 transition ${toolTraceOpen ? "rotate-180" : ""}`} />
-                            </div>
-                          </button>
-
-                          {toolTraceOpen ? (
-                            <div className="mt-3 space-y-2 border-t border-slate-200 pt-3">
-                              {visibleTraceFeed().map((trace, index) => (
-                                <div key={trace.id} className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5">
-                                  <div className="mt-0.5 flex flex-col items-center">
-                                    <div className="h-2.5 w-2.5 rounded-full bg-accent" />
-                                    {index < visibleTraceFeed().length - 1 ? <div className="mt-1 h-6 w-px bg-slate-200" /> : null}
-                                  </div>
-                                  <div className="min-w-0 flex-1">
-                                    <div className="flex flex-wrap items-center gap-2">
-                                      <div className="text-[11px] font-semibold text-slate-800">{trace.tool_name}</div>
-                                      <span className={`rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] ${traceStatusTone(trace.status)}`}>
-                                        {trace.status.replaceAll("_", " ")}
-                                      </span>
-                                    </div>
-                                    <div className="mt-1 text-[10px] uppercase tracking-[0.12em] text-slate-400">{trace.risk_class}</div>
-                                    {Object.keys(trace.arguments || {}).length ? (
-                                      <pre className="mt-2 overflow-x-auto whitespace-pre-wrap rounded-lg bg-white px-2.5 py-2 text-[10px] leading-5 text-slate-600 ring-1 ring-slate-200">
-                                        {JSON.stringify(trace.arguments, null, 2)}
-                                      </pre>
-                                    ) : (
-                                      <div className="mt-2 text-[10px] text-slate-500">No explicit arguments.</div>
-                                    )}
-                                  </div>
-                                </div>
-                              ))}
-
-                              {!isResponding && !visibleTraceFeed().length ? (
-                                <div className="text-[10px] text-slate-500">Tool steps will appear here as Jobest plans and executes them.</div>
-                              ) : null}
-                            </div>
-                          ) : null}
+                          </div>
                         </div>
-                      ) : null}
-                    </div>
-                  </div>
-                </div>
-              ))}
+                      </div>
 
-              {!visibleMessages().length ? (
+                      {/* Agent plan panel below the thinking bubble */}
+                      {msgTraces && msgTraces.length > 0 && (
+                        <div className="ml-12 mt-2 max-w-[84%]">
+                          <LiveAgentPlan
+                            traces={msgTraces}
+                            isResponding={isResponding}
+                            toolSteps={msgTraces.length}
+                            defaultCollapsed={false}
+                          />
+                        </div>
+                      )}
+                    </motion.div>
+                  );
+                }
+
+                return (
+                  <motion.div
+                    key={row.id}
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.25, ease: [0.2, 0.65, 0.3, 0.9] }}
+                  >
+                    <div className={`flex w-full ${isUser ? "justify-end" : "justify-start"}`}>
+                      <div className={`flex max-w-[84%] items-end gap-2.5 ${isUser ? "flex-row-reverse" : ""}`}>
+                        {/* Avatar */}
+                        <div
+                          className={`grid h-9 w-9 shrink-0 place-items-center rounded-2xl border ${
+                            isUser
+                              ? "border-blue-200 bg-blue-50 text-accent"
+                              : "border-slate-200 bg-white shadow-sm"
+                          }`}
+                        >
+                          {isUser ? (
+                            <span className="text-xs font-bold">KM</span>
+                          ) : (
+                            <Image src="/icon.svg" alt="Jobest" width={18} height={18} className="h-[18px] w-[18px]" />
+                          )}
+                        </div>
+
+                        {/* Bubble */}
+                        <div
+                          className={`rounded-[1.35rem] px-4 py-3 text-sm leading-6 ${
+                            isUser
+                              ? "bg-accent text-white shadow-[0_8px_24px_rgba(29,78,216,0.2)]"
+                              : "border border-slate-200 bg-slate-50 text-slate-700 border-l-2 border-l-accent/20"
+                          }`}
+                        >
+                          <div
+                            className={`mb-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] ${
+                              isUser ? "text-blue-200" : "text-slate-400"
+                            }`}
+                          >
+                            {isUser ? "You" : "Jobest AI"}
+                          </div>
+                          <MarkdownMessage content={row.content} user={isUser} />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Agent plan panel below each assistant message */}
+                    {!isUser && msgTraces && msgTraces.length > 0 && (
+                      <div className="ml-12 mt-2 max-w-[84%]">
+                        <LiveAgentPlan
+                          traces={msgTraces}
+                          isResponding={isResponding && rowIndex === rows.length - 1}
+                          toolSteps={msgTraces.length}
+                          defaultCollapsed={rowIndex < latestAssistantIndex}
+                        />
+                      </div>
+                    )}
+                  </motion.div>
+                );
+              })}
+
+              {!allMessages.length ? (
                 <div className="rounded-[1.6rem] border border-dashed border-slate-200 bg-slate-50 p-5">
                   <div className="text-sm leading-7 text-slate-600">
                     Ask the copilot to inspect workspace data or prepare an action. It uses typed tools, records every execution, and only mutates workspace state after confirmation.
