@@ -161,6 +161,19 @@ def _result_summary(tool_name: str, result: dict) -> str:
                 f"- {row['title']} (`{row['id']}`)" for row in matched[:12]
             )
         return f"Found {len(postings)} job postings.\n\n" + "\n".join(f"- {row['title']} (`{row['id']}`)" for row in postings[:12])
+    if tool_name == "get_job_posting":
+        return (
+            f"Loaded job posting `{result.get('title', 'Unknown posting')}`.\n\n"
+            f"Status: {result.get('status', 'unknown')}\n\n"
+            f"{result.get('hiring_context') or result.get('job_description') or 'Posting details are available in the trace.'}"
+        )
+    if tool_name == "get_candidate_detail":
+        return (
+            f"Loaded candidate `{result.get('candidate_name', 'Unknown candidate')}`.\n\n"
+            f"Role: {result.get('job_posting_title', 'Unknown role')}\n"
+            f"Triage: {result.get('triage_score', 0)}\n"
+            f"Status: {result.get('analysis_status', 'unknown')}"
+        )
     if tool_name == "list_candidates":
         rows = result.get("candidates", [])
         if result.get("completed_only"):
@@ -216,6 +229,12 @@ def _result_summary(tool_name: str, result: dict) -> str:
             f"Workspace coverage: {result.get('posting_count', 0)} job postings, {result.get('candidate_count', 0)} candidates, "
             f"{result.get('completed_count', 0)} completed analyses.\n\n"
             + "\n".join(f"- {row['title']} (`{row['id']}`)" for row in postings[:12])
+        )
+    if tool_name == "get_runtime_settings_safe":
+        return (
+            f"Current runtime settings: provider `{result.get('provider', 'unknown')}`, model `{result.get('model', 'unknown')}`, "
+            f"parallel agents `{result.get('parallel_agents_limit', 0)}`, retry attempts `{result.get('retry_attempts', 0)}`, "
+            f"retry delay `{result.get('retry_delay_seconds', 0)} seconds`."
         )
     if tool_name == "generate_outreach_email":
         subject = result.get("email_subject") or ""
@@ -489,7 +508,15 @@ async def send_message(
 
         signature = json.dumps({"tool_name": tool_name, "arguments": arguments}, sort_keys=True, ensure_ascii=True)
         if signature in seen_read_signatures:
-            assistant_text = str(plan.get("answer") or "I reached the same read step twice and need a clearer target to continue.")
+            plan_answer = str(plan.get("answer") or "").strip()
+            if not plan_answer and tool_results:
+                assistant_text = await runtime.answer_from_tool_results(
+                    content=payload.content,
+                    tool_results=tool_results,
+                    provider_override=provider_override,
+                )
+            else:
+                assistant_text = plan_answer or "I reached the same read step twice and need a clearer target to continue."
             break
         seen_read_signatures.add(signature)
         try:
@@ -530,7 +557,11 @@ async def send_message(
             assistant_text = f"I could not run `{tool_name}`: {exc}"
             break
 
-    if pending_row is None and tool_results and (not assistant_text or assistant_text == _result_summary(tool_results[-1]["tool_name"], tool_results[-1]["result"])):
+    if pending_row is None and tool_results and (
+        not assistant_text
+        or assistant_text == _result_summary(tool_results[-1]["tool_name"], tool_results[-1]["result"])
+        or assistant_text.startswith("I reached the same read step twice")
+    ):
         assistant_text = await runtime.answer_from_tool_results(
             content=payload.content,
             tool_results=tool_results,
