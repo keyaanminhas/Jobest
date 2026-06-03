@@ -318,22 +318,41 @@ class RecruiterAgentRuntime:
 
     def _extract_search_query(self, text: str) -> str:
         query = text.strip()
-        patterns = [
-            r"(?i)^search resumes (?:for|with|about)\s+",
-            r"(?i)^search resumes mentioning\s+",
+        prefixes = [
+            r"(?i)^are there any candidates whose resumes claim\s+",
+            r"(?i)^are there any candidates who mention\s+",
+            r"(?i)^are there any candidates with\s+",
+            r"(?i)^are there any candidates\s+",
+            r"(?i)^search resumes (?:for|with|about|mentioning)\s+",
             r"(?i)^search candidates (?:for|with|by|mentioning)\s+",
-            r"(?i)^find candidates (?:for|with)\s+",
-            r"(?i)^find candidate (?:for|with)\s+",
+            r"(?i)^find candidates\s+(?:who\s+mention|who\s+have|who\s+claim|who|whose|with|for|that|mention|have)\s+",
+            r"(?i)^find candidate\s+(?:who\s+mention|who\s+have|who\s+claim|who|whose|with|for|that|mention|have)\s+",
+            r"(?i)^find candidates\s+",
+            r"(?i)^find candidate\s+",
             r"(?i)^open the candidate pdfs and find mentions of\s+",
             r"(?i)^find mentions of\s+",
             r"(?i)^which candidates mention\s+",
+            r"(?i)^who mention\s+",
+            r"(?i)^whose resumes claim\s+",
         ]
-        for pattern in patterns:
+        for pattern in prefixes:
             query = re.sub(pattern, "", query).strip()
-        query = re.sub(r"(?i)\s+but lack evidence.*$", "", query).strip()
-        query = re.sub(r"(?i)\s+experience[.?!]*$", "", query).strip()
-        query = re.sub(r"(?i)\s+evidence[.?!]*$", "", query).strip()
-        return query.strip(" ?.:")
+
+        suffixes = [
+            r"(?i)\s+but lack external evidence.*$",
+            r"(?i)\s+but lack evidence.*$",
+            r"(?i)\s+in their resumes?[.?!]*$",
+            r"(?i)\s+in their CVs?[.?!]*$",
+            r"(?i)\s+on their resumes?[.?!]*$",
+            r"(?i)\s+on their CVs?[.?!]*$",
+            r"(?i)\s+experience[.?!]*$",
+            r"(?i)\s+evidence[.?!]*$",
+            r"(?i)\s+claims?[.?!]*$",
+        ]
+        for pattern in suffixes:
+            query = re.sub(pattern, "", query).strip()
+
+        return query.strip(" ?.:\"'")
 
     def _infer_posting_draft(self, text: str) -> dict[str, str] | None:
         title_match = re.search(r"(?im)^title\s*:\s*(.+)$", text)
@@ -575,7 +594,15 @@ class RecruiterAgentRuntime:
         query_text = raw_query.strip().lower()
         if not query_text:
             raise ValueError("Search query is required.")
-        query_terms = [term.strip() for term in re.split(r"(?i)\band\b|,", query_text) if term.strip()]
+        
+        # Split by " or " first to support logical OR search
+        or_groups = [group.strip() for group in re.split(r"(?i)\bor\b", query_text) if group.strip()]
+        match_groups = []
+        for group in or_groups:
+            and_terms = [term.strip() for term in re.split(r"(?i)\band\b|,", group) if term.strip()]
+            if and_terms:
+                match_groups.append(and_terms)
+
         rows = (
             await db.scalars(
                 select(Candidate)
@@ -587,14 +614,29 @@ class RecruiterAgentRuntime:
         matches = []
         for row in rows:
             haystack = f"{row.display_name} {row.resume_text} {row.triage.triage_summary if row.triage else ''}".lower()
-            if query_terms:
-                if not all(term in haystack for term in query_terms):
-                    continue
-            elif query_text not in haystack:
+            
+            # Check if any OR group matches (meaning all AND terms in that group are satisfied)
+            matched = False
+            matching_terms = []
+            for and_terms in match_groups:
+                if all(term in haystack for term in and_terms):
+                    matched = True
+                    matching_terms.extend(and_terms)
+            
+            if match_groups and not matched:
                 continue
-            index = min((haystack.find(term) for term in query_terms if term in haystack), default=haystack.find(query_text))
-            resume_lower = row.resume_text.lower()
-            resume_index = min((resume_lower.find(term) for term in query_terms if term in resume_lower), default=resume_lower.find(query_text))
+            elif not match_groups and query_text not in haystack:
+                continue
+
+            if matching_terms:
+                index = min((haystack.find(term) for term in matching_terms if term in haystack), default=0)
+                resume_lower = row.resume_text.lower()
+                resume_index = min((resume_lower.find(term) for term in matching_terms if term in resume_lower), default=-1)
+            else:
+                index = haystack.find(query_text)
+                resume_lower = row.resume_text.lower()
+                resume_index = resume_lower.find(query_text)
+
             snippet_start = max(0, resume_index - 100) if resume_index >= 0 else 0
             snippet = row.resume_text[snippet_start : snippet_start + 280].replace("\n", " ")
             matches.append(
