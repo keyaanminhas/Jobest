@@ -27,6 +27,26 @@ from app.services.secret_crypto import decrypt_secret
 router = APIRouter(prefix="/api/agent-chat", tags=["agent-chat"])
 runtime = RecruiterAgentRuntime()
 MAX_AGENT_TOOL_STEPS = 6
+DEFAULT_COPILOT_TITLE = "Recruiter Copilot"
+
+
+def _dynamic_tool_step_limit(content: str) -> int:
+    lower = content.lower()
+    if any(token in lower for token in ("most candidates", "least candidates", "fewest candidates", "candidate count")):
+        return 3
+    if any(token in lower for token in ("compare candidates", "side-by-side", "versus", "vs")):
+        return 4
+    if any(token in lower for token in ("outreach email", "rejection email", "targeted interview questions")):
+        return 3
+    return MAX_AGENT_TOOL_STEPS
+
+
+def _is_candidate_count_comparison_prompt(content: str) -> bool:
+    lower = content.lower()
+    return (
+        any(token in lower for token in ("most candidates", "least candidates", "fewest candidates", "candidate count"))
+        and any(token in lower for token in ("job", "posting", "listing", "position", "role"))
+    )
 
 
 def _message_item(row: AgentChatMessage) -> AgentChatMessageItem:
@@ -312,7 +332,7 @@ async def create_session(
             raise HTTPException(status_code=404, detail="Candidate context not found in this workspace")
     session = AgentChatSession(
         user_id=current_user.id,
-        title=payload.title.strip() or "Recruiter Copilot",
+        title=payload.title.strip() or DEFAULT_COPILOT_TITLE,
         job_posting_id=payload.job_posting_id,
         candidate_id=payload.candidate_id,
     )
@@ -365,6 +385,10 @@ async def send_message(
     current_user: User = Depends(get_current_user),
 ) -> AgentChatTurnResponse:
     session = await _owned_session(db, current_user.id, session_id)
+    if (session.title or "").strip() == DEFAULT_COPILOT_TITLE:
+        first_prompt = " ".join(payload.content.strip().split())
+        if first_prompt:
+            session.title = first_prompt[:72]
     user_message = AgentChatMessage(session_id=session.id, role="user", content=payload.content, metadata_json={})
     db.add(user_message)
     session.updated_at = datetime.utcnow()
@@ -384,8 +408,10 @@ async def send_message(
     tool_results: list[dict[str, object]] = []
     seen_read_signatures: set[str] = set()
     assistant_text = "I need more detail before I can act."
+    candidate_count_prompt = _is_candidate_count_comparison_prompt(payload.content)
 
-    for _ in range(MAX_AGENT_TOOL_STEPS):
+    step_limit = _dynamic_tool_step_limit(payload.content)
+    for _ in range(step_limit):
         plan = await runtime.plan(
             db,
             user_id=current_user.id,
@@ -398,6 +424,15 @@ async def send_message(
         metadata = {"planner": plan.get("planner", "unknown")}
         tool_name = plan.get("tool_name")
         arguments = plan.get("arguments") or {}
+        if (
+            candidate_count_prompt
+            and tool_results
+            and not any(row.get("tool_name") == "get_workspace_summary" for row in tool_results)
+            and tool_name in {"list_job_postings", "list_candidates"}
+        ):
+            tool_name = "get_workspace_summary"
+            arguments = {}
+            metadata["planner"] = f"{metadata['planner']}_coerced"
         resolved_posting_id = arguments.get("job_posting_id") if isinstance(arguments, dict) else None
         resolved_candidate_id = None
         if isinstance(arguments, dict):
@@ -410,17 +445,18 @@ async def send_message(
                 select(JobPosting).where(JobPosting.id == resolved_posting_id, JobPosting.user_id == current_user.id)
             )
             if posting is not None:
-                session.job_posting_id = posting.id
                 session_context["job_posting_id"] = posting.id
-                if session.title == "Recruiter Copilot":
-                    session.title = posting.title
         if resolved_candidate_id and not session.candidate_id:
-            session.candidate_id = resolved_candidate_id
             session_context["candidate_id"] = resolved_candidate_id
 
         if tool_name is None:
-            assistant_text = str(plan.get("answer") or "I need more detail before I can act.")
-            break
+            if candidate_count_prompt and not any(row.get("tool_name") == "get_workspace_summary" for row in tool_results):
+                tool_name = "get_workspace_summary"
+                arguments = {}
+                metadata["planner"] = f"{metadata['planner']}_coerced"
+            else:
+                assistant_text = str(plan.get("answer") or "I need more detail before I can act.")
+                break
 
         spec = TOOL_MAP[tool_name]
         metadata.update({"tool_name": tool_name, "risk_class": spec.risk_class, "tool_steps": len(tool_results) + 1})
@@ -493,6 +529,13 @@ async def send_message(
             )
             assistant_text = f"I could not run `{tool_name}`: {exc}"
             break
+
+    if pending_row is None and tool_results and (not assistant_text or assistant_text == _result_summary(tool_results[-1]["tool_name"], tool_results[-1]["result"])):
+        assistant_text = await runtime.answer_from_tool_results(
+            content=payload.content,
+            tool_results=tool_results,
+            provider_override=provider_override,
+        )
 
     assistant = AgentChatMessage(session_id=session.id, role="assistant", content=assistant_text, metadata_json=metadata)
     db.add(assistant)

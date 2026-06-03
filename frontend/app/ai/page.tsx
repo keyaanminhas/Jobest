@@ -29,6 +29,8 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import { useEffect, useRef, useState, useTransition } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 const suggestions = [
   "List all job postings in this workspace.",
@@ -45,11 +47,6 @@ const quickStarts = [
   { label: "Analyze batch", prompt: "Analyze all candidates for this posting." },
 ];
 
-function sessionTitleFor(jobId: string, jobs: JobPostingRecord[]) {
-  const title = jobs.find((job) => job.id === jobId)?.title;
-  return title ? `Copilot: ${title}` : "Workspace Recruiter Copilot";
-}
-
 function messageBubble(row: AgentChatMessage) {
   return row.role === "user"
     ? "bg-accent text-white shadow-[0_18px_40px_rgba(29,78,216,0.18)]"
@@ -65,6 +62,38 @@ function traceStatusTone(status: string) {
   if (status === "awaiting_confirmation") return "bg-amber-50 text-amber-800 ring-1 ring-amber-200";
   if (status === "error") return "bg-red-50 text-red-700 ring-1 ring-red-200";
   return "bg-slate-100 text-slate-600 ring-1 ring-slate-200";
+}
+
+function MarkdownMessage({ content, user }: { content: string; user: boolean }) {
+  return (
+    <div className={`prose prose-sm max-w-none ${user ? "prose-invert" : "prose-slate"}`}>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          p: ({ children }) => <p className="my-0 whitespace-pre-wrap">{children}</p>,
+          ul: ({ children }) => <ul className="my-2 list-disc pl-5">{children}</ul>,
+          ol: ({ children }) => <ol className="my-2 list-decimal pl-5">{children}</ol>,
+          li: ({ children }) => <li className="my-1">{children}</li>,
+          h1: ({ children }) => <h1 className="mb-2 mt-0 text-base font-semibold">{children}</h1>,
+          h2: ({ children }) => <h2 className="mb-2 mt-0 text-[15px] font-semibold">{children}</h2>,
+          h3: ({ children }) => <h3 className="mb-2 mt-0 text-sm font-semibold">{children}</h3>,
+          hr: () => <hr className="my-3 border-slate-200" />,
+          code: ({ className, children }) =>
+            className ? (
+              <code className="block overflow-x-auto whitespace-pre rounded-lg bg-slate-900/95 px-3 py-2 text-[12px] text-slate-100">
+                {children}
+              </code>
+            ) : (
+              <code className="rounded bg-black/10 px-1 py-0.5 text-[0.9em]">{children}</code>
+            ),
+          pre: ({ children }) => <pre className="my-2 overflow-x-auto">{children}</pre>,
+          strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+        }}
+      >
+        {content}
+      </ReactMarkdown>
+    </div>
+  );
 }
 
 export default function AiCopilotPage() {
@@ -130,7 +159,7 @@ export default function AiCopilotPage() {
     startTransition(async () => {
       try {
         const created = await createAgentChatSession({
-          title: sessionTitleFor(selectedJobId, jobs),
+          title: "Recruiter Copilot",
           job_posting_id: selectedJobId || null,
         });
         setSession(created);
@@ -214,6 +243,7 @@ export default function AiCopilotPage() {
     const text = message.trim();
     if (!text && files.length === 0) return;
     setError("");
+    setMessage("");
     const now = new Date().toISOString();
     const optimisticUser: AgentChatMessage = {
       id: `optimistic-user-${Date.now()}`,
@@ -238,7 +268,7 @@ export default function AiCopilotPage() {
         let active = session;
         if (!active) {
           active = await createAgentChatSession({
-            title: sessionTitleFor(selectedJobId, jobs),
+            title: "Recruiter Copilot",
             job_posting_id: selectedJobId || null,
           });
         }
@@ -255,11 +285,11 @@ export default function AiCopilotPage() {
         }
         const turn = await sendAgentChatMessage(active.id, `${text || "Review the attached candidate PDFs."}${uploadNote}`);
         setSession(turn.session);
-        setMessage("");
         setFiles([]);
         setOptimisticMessages([]);
         await refreshSessionList();
       } catch (exc) {
+        setMessage(text);
         setError(exc instanceof Error ? exc.message : "Copilot request failed.");
       } finally {
         setIsResponding(false);
@@ -377,14 +407,14 @@ export default function AiCopilotPage() {
                       <div className={`mb-1 text-[11px] font-semibold uppercase tracking-[0.12em] ${row.role === "user" ? "text-blue-100" : "text-slate-400"}`}>
                         {row.role === "user" ? "You" : "Jobest AI"}
                       </div>
-                      <div className="whitespace-pre-wrap">
+                      <div>
                         {row.metadata?.loading ? (
                           <span className="inline-flex items-center gap-2 text-slate-600">
                             <LoaderCircle className="h-4 w-4 animate-spin text-accent" />
                             {row.content}
                           </span>
                         ) : (
-                          row.content
+                          <MarkdownMessage content={row.content} user={row.role === "user"} />
                         )}
                       </div>
 

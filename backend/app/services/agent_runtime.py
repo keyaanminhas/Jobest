@@ -87,6 +87,114 @@ class RecruiterAgentRuntime:
     def __init__(self) -> None:
         self.llm = LLMClient()
 
+    async def answer_from_tool_results(
+        self,
+        *,
+        content: str,
+        tool_results: list[dict[str, Any]],
+        provider_override: ProviderConfig | None = None,
+    ) -> str:
+        if not tool_results:
+            return "I need more detail before I can act."
+
+        aggregate = self._aggregate_tool_insights(content, tool_results)
+        if aggregate:
+            return aggregate
+
+        prompt = (
+            "You are Jobest Recruiter Copilot. The tools have already been called. "
+            "Write the final recruiter-facing answer in markdown using only the tool results provided. "
+            "Do not call tools. Do not ask for more tool use unless the results are clearly insufficient. "
+            "Answer the user's actual question directly and concisely."
+        )
+        payload = {
+            "message": content,
+            "tool_results": tool_results[-8:],
+        }
+        try:
+            data = await self.llm.call_agent(
+                "agent_copilot_finalizer",
+                prompt,
+                payload,
+                temperature=0.1,
+                provider_override=provider_override,
+            )
+            if isinstance(data, dict):
+                answer = str(data.get("answer") or data.get("content") or "").strip()
+            else:
+                answer = str(data or "").strip()
+            if answer:
+                return answer
+        except Exception:
+            pass
+
+        return str(tool_results[-1].get("summary") or "I gathered the data, but I could not summarize it cleanly.")
+
+    def _aggregate_tool_insights(self, content: str, tool_results: list[dict[str, Any]]) -> str | None:
+        lower = content.lower()
+        if not tool_results:
+            return None
+
+        if (
+            ("most candidates" in lower or "least candidates" in lower or "fewest candidates" in lower or "candidate count" in lower)
+            and any(row.get("tool_name") == "get_workspace_summary" for row in tool_results)
+        ):
+            workspace = next((row.get("result", {}) for row in tool_results if row.get("tool_name") == "get_workspace_summary"), {})
+            postings = workspace.get("postings", []) if isinstance(workspace, dict) else []
+            if postings:
+                sorted_postings = sorted(
+                    postings,
+                    key=lambda row: int(row.get("candidate_count") or 0),
+                    reverse="least candidates" not in lower and "fewest candidates" not in lower,
+                )
+                best = sorted_postings[0]
+                comparator = "most" if ("least candidates" not in lower and "fewest candidates" not in lower) else "fewest"
+                return (
+                    f"### Candidate Count by Job Posting\n\n"
+                    f"`{best.get('title', 'Unknown posting')}` has the **{comparator} candidates** with **{best.get('candidate_count', 0)}** applicants.\n\n"
+                    + "\n".join(f"- `{row.get('title', 'Unknown posting')}`: {row.get('candidate_count', 0)} candidates" for row in sorted_postings)
+                )
+
+        candidate_listing_tools = [row for row in tool_results if row.get("tool_name") == "list_candidates"]
+        if ("most candidates" in lower or "least candidates" in lower or "fewest candidates" in lower) and candidate_listing_tools:
+            posting_titles: dict[str, str] = {}
+            posting_listing = next((row.get("result", {}) for row in tool_results if row.get("tool_name") == "list_job_postings"), {})
+            if isinstance(posting_listing, dict):
+                for posting in posting_listing.get("postings", []):
+                    posting_id = str(posting.get("id") or "")
+                    if posting_id:
+                        posting_titles[posting_id] = str(posting.get("title") or posting_id)
+            counts: list[tuple[str, int]] = []
+            for row in candidate_listing_tools:
+                result = row.get("result", {})
+                arguments = row.get("arguments", {})
+                if not isinstance(result, dict) or not isinstance(arguments, dict):
+                    continue
+                posting_id = str(arguments.get("job_posting_id") or "")
+                count = len(result.get("candidates", []))
+                counts.append((posting_id, count))
+            if counts:
+                best_posting_id, best_count = sorted(
+                    counts,
+                    key=lambda item: item[1],
+                    reverse="least candidates" not in lower and "fewest candidates" not in lower,
+                )[0]
+                comparator = "most" if ("least candidates" not in lower and "fewest candidates" not in lower) else "fewest"
+                sorted_counts = sorted(
+                    counts,
+                    key=lambda item: item[1],
+                    reverse="least candidates" not in lower and "fewest candidates" not in lower,
+                )
+                return (
+                    f"`{posting_titles.get(best_posting_id, best_posting_id)}` has the **{comparator} candidates** with **{best_count}** applicants.\n\n"
+                    + "\n".join(
+                        f"- `{posting_titles.get(posting_id, posting_id)}`: {count} candidates"
+                        for posting_id, count in sorted_counts
+                    )
+                )
+
+        return None
+
     async def _coerce_llm_plan(
         self,
         db: AsyncSession,
@@ -418,6 +526,11 @@ class RecruiterAgentRuntime:
             return {"tool_name": "list_job_postings", "arguments": {"classification_hint": "cs_related"}, "answer": "", "planner": "fallback"}
         if any(token in lower for token in ("read the database", "job coverage", "workspace summary", "summarize workspace")):
             return {"tool_name": "get_workspace_summary", "arguments": {}, "answer": "", "planner": "fallback"}
+        if (
+            ("most candidates" in lower or "least candidates" in lower or "fewest candidates" in lower or "candidate count" in lower)
+            and "job" in lower
+        ):
+            return {"tool_name": "get_workspace_summary", "arguments": {}, "answer": "", "planner": "fallback"}
         if any(token in lower for token in ("create", "draft", "generate")) and ("job" in lower or "posting" in lower or "jd" in lower or "description:" in lower):
             draft = self._infer_posting_draft(text)
             if draft:
@@ -747,11 +860,17 @@ class RecruiterAgentRuntime:
             )
         ).all()
         completed = sum(1 for candidate in candidates if candidate.analysis_status == "completed" or candidate.final_output is not None)
+        counts_by_posting: dict[str, int] = {}
+        for candidate in candidates:
+            counts_by_posting[candidate.job_posting_id] = counts_by_posting.get(candidate.job_posting_id, 0) + 1
         return {
             "posting_count": len(postings),
             "candidate_count": len(candidates),
             "completed_count": completed,
-            "postings": [{"id": posting.id, "title": posting.title} for posting in postings],
+            "postings": [
+                {"id": posting.id, "title": posting.title, "candidate_count": counts_by_posting.get(posting.id, 0)}
+                for posting in postings
+            ],
         }
 
     async def _find_unsupported_claims(self, db: AsyncSession, user_id: str, raw_query: str, posting_id: str) -> dict[str, Any]:

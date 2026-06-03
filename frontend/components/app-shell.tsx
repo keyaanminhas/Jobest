@@ -230,7 +230,8 @@ export function AppShell({
             })}
           </nav>
 
-          <div className="mt-auto rounded-2xl border border-slate-200 bg-white p-4">
+          <div className="mt-auto pt-8">
+            <div className="rounded-2xl border border-slate-200 bg-white p-4">
             <div className="text-xs uppercase tracking-[0.2em] text-slate-500">Quick Actions</div>
             <div className="mt-3 space-y-2">
               <Link
@@ -255,14 +256,15 @@ export function AppShell({
                 <ChartColumnBig className="h-4 w-4 text-accent" />
               </Link>
             </div>
-          </div>
-
-          <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
-            <div className="flex items-center gap-2 text-sm font-semibold text-slate-700">
-              <CircleHelp className="h-4 w-4 text-accent" />
-              Need help?
             </div>
-            <div className="mt-2 text-xs text-slate-500">Visit Help Center</div>
+
+            <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
+              <div className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+                <CircleHelp className="h-4 w-4 text-accent" />
+                Need help?
+              </div>
+              <div className="mt-2 text-xs text-slate-500">Visit Help Center</div>
+            </div>
           </div>
         </aside>
 
@@ -405,7 +407,7 @@ export function AppShell({
             </div>
           </div>
 
-          <div className="px-6 py-6">
+          <div className="px-6 pb-6 pt-8">
             <div className={noPageHeader ? "" : "rounded-2xl border border-slate-200 bg-white p-6"}>
               {!noPageHeader && (
                 <div className="mb-6 flex flex-col gap-4 border-b border-slate-100 pb-5 lg:flex-row lg:items-center lg:justify-between">
