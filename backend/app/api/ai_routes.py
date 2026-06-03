@@ -26,7 +26,7 @@ from app.services.secret_crypto import decrypt_secret
 
 router = APIRouter(prefix="/api/agent-chat", tags=["agent-chat"])
 runtime = RecruiterAgentRuntime()
-MAX_AGENT_TOOL_STEPS = 4
+MAX_AGENT_TOOL_STEPS = 6
 
 
 def _message_item(row: AgentChatMessage) -> AgentChatMessageItem:

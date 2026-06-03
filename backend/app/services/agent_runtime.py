@@ -46,6 +46,7 @@ TOOLS = [
     ToolSpec("run_candidate_full_analysis", "write_safe", "Queue full analysis for candidate_ids or all candidates in a posting."),
     ToolSpec("run_stage_on_candidates", "write_safe", "Queue a prerequisite-aware refresh focused on one named pipeline stage."),
     ToolSpec("update_runtime_settings_safe", "write_safe", "Update parallel_agents_limit, retry_attempts, or retry_delay_seconds only."),
+    ToolSpec("update_job_posting", "write_safe", "Update title, description, hiring_context, company_priority, status, or must_have_skills/nice_to_have_skills of a job posting."),
 ]
 TOOL_MAP = {tool.name: tool for tool in TOOLS}
 
@@ -100,7 +101,7 @@ class RecruiterAgentRuntime:
 
         posting = None
         posting_id = normalized_args.get("job_posting_id") if tool_name else None
-        if tool_name in {"list_candidates", "run_triage_for_job", "run_candidate_full_analysis", "run_stage_on_candidates", "get_job_insights"}:
+        if tool_name in {"list_candidates", "run_triage_for_job", "run_candidate_full_analysis", "run_stage_on_candidates", "get_job_insights", "update_job_posting"}:
             posting = await self._resolve_posting(db, user_id, content, session_context, history)
             posting_id = posting_id or session_context.get("job_posting_id") or (posting.id if posting else None)
             if posting_id:
@@ -239,16 +240,13 @@ class RecruiterAgentRuntime:
         session_context: dict[str, Any],
         history: list[dict[str, str]],
     ) -> JobPosting | None:
-        posting_id = session_context.get("job_posting_id")
-        if posting_id:
-            return await db.scalar(select(JobPosting).where(JobPosting.id == posting_id, JobPosting.user_id == user_id))
-
         postings = (
             await db.scalars(select(JobPosting).where(JobPosting.user_id == user_id).order_by(JobPosting.updated_at.desc()))
         ).all()
         if not postings:
             return None
 
+        # 1. Try to find a matching posting by title in the current message or recent user history
         search_texts = [content]
         for row in reversed(history[-6:]):
             if row.get("role") == "user":
@@ -263,7 +261,16 @@ class RecruiterAgentRuntime:
                     continue
                 if best_match is None or score > best_match[0]:
                     best_match = (score, posting)
-        return best_match[1] if best_match else None
+
+        if best_match:
+            return best_match[1]
+
+        # 2. Fallback to active posting context from session
+        posting_id = session_context.get("job_posting_id")
+        if posting_id:
+            return await db.scalar(select(JobPosting).where(JobPosting.id == posting_id, JobPosting.user_id == user_id))
+
+        return None
 
     async def _resolve_candidate(
         self,
@@ -274,14 +281,6 @@ class RecruiterAgentRuntime:
         posting_id: str | None,
         history: list[dict[str, str]],
     ) -> Candidate | None:
-        candidate_id = session_context.get("candidate_id")
-        if candidate_id:
-            return await db.scalar(
-                select(Candidate)
-                .join(JobPosting, Candidate.job_posting_id == JobPosting.id)
-                .where(Candidate.id == candidate_id, JobPosting.user_id == user_id)
-            )
-
         query = select(Candidate).join(JobPosting, Candidate.job_posting_id == JobPosting.id).where(JobPosting.user_id == user_id)
         if posting_id:
             query = query.where(Candidate.job_posting_id == posting_id)
@@ -289,6 +288,7 @@ class RecruiterAgentRuntime:
         if not candidates:
             return None
 
+        # 1. Try to find a matching candidate by name in the current message or recent user history
         search_texts = [content]
         for row in reversed(history[-6:]):
             if row.get("role") == "user":
@@ -301,7 +301,20 @@ class RecruiterAgentRuntime:
                     continue
                 if best_match is None or score > best_match[0]:
                     best_match = (score, candidate)
-        return best_match[1] if best_match else None
+
+        if best_match:
+            return best_match[1]
+
+        # 2. Fallback to active candidate context from session
+        candidate_id = session_context.get("candidate_id")
+        if candidate_id:
+            return await db.scalar(
+                select(Candidate)
+                .join(JobPosting, Candidate.job_posting_id == JobPosting.id)
+                .where(Candidate.id == candidate_id, JobPosting.user_id == user_id)
+            )
+
+        return None
 
     def _extract_search_query(self, text: str) -> str:
         query = text.strip()
@@ -507,6 +520,8 @@ class RecruiterAgentRuntime:
             return await self._queue_analysis(db, user_id, arguments, focused_stage=arguments.get("stage") if tool_name == "run_stage_on_candidates" else None)
         if tool_name == "update_runtime_settings_safe":
             return await self._update_runtime_settings(db, user_id, arguments)
+        if tool_name == "update_job_posting":
+            return await self._update_job_posting(db, user_id, arguments)
         raise ValueError(f"Unknown tool: {tool_name}")
 
     async def _owned_posting(self, db: AsyncSession, user_id: str, posting_id: str) -> JobPosting:
@@ -731,7 +746,7 @@ class RecruiterAgentRuntime:
 
     async def _create_job_posting(self, db: AsyncSession, user_id: str, arguments: dict[str, Any]) -> dict[str, Any]:
         title = str(arguments.get("title") or "").strip()
-        description = str(arguments.get("job_description") or "").strip()
+        description = str(arguments.get("job_description") or arguments.get("description") or "").strip()
         if not title or not description:
             raise ValueError("Creating a posting requires title and job_description.")
         must_have = [str(item).strip() for item in arguments.get("must_have_skills", []) if str(item).strip()]
@@ -855,3 +870,46 @@ class RecruiterAgentRuntime:
             raise ValueError("No safe runtime settings were supplied.")
         await db.commit()
         return {"updated": changed}
+
+    async def _update_job_posting(self, db: AsyncSession, user_id: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        posting_id = str(arguments.get("job_posting_id") or "").strip()
+        if not posting_id:
+            raise ValueError("Updating a posting requires job_posting_id.")
+        posting = await self._owned_posting(db, user_id, posting_id)
+
+        description = arguments.get("job_description") or arguments.get("description")
+        title = arguments.get("title")
+        hiring_context = arguments.get("hiring_context")
+        company_priority = arguments.get("company_priority")
+        status = arguments.get("status")
+
+        if title is not None:
+            posting.title = str(title).strip()
+        if description is not None:
+            posting.job_description = str(description).strip()
+        if hiring_context is not None:
+            posting.hiring_context = str(hiring_context).strip()
+        if company_priority is not None:
+            posting.company_priority = str(company_priority).strip()
+        if status is not None:
+            posting.status = str(status).strip()
+
+        must_have = arguments.get("must_have_skills")
+        nice_to_have = arguments.get("nice_to_have_skills")
+        if must_have is not None or nice_to_have is not None:
+            from sqlalchemy import delete
+            from app.models import JobPostingSkill
+            
+            if must_have is not None:
+                await db.execute(delete(JobPostingSkill).where(JobPostingSkill.job_posting_id == posting.id, JobPostingSkill.skill_type == "must_have"))
+                for skill in must_have:
+                    if str(skill).strip():
+                        db.add(JobPostingSkill(job_posting_id=posting.id, skill_name=str(skill).strip(), skill_type="must_have"))
+            if nice_to_have is not None:
+                await db.execute(delete(JobPostingSkill).where(JobPostingSkill.job_posting_id == posting.id, JobPostingSkill.skill_type == "nice_to_have"))
+                for skill in nice_to_have:
+                    if str(skill).strip():
+                        db.add(JobPostingSkill(job_posting_id=posting.id, skill_name=str(skill).strip(), skill_type="nice_to_have"))
+
+        await db.commit()
+        return {"updated": True, "job_posting_id": posting.id}
