@@ -31,20 +31,20 @@ Summary:
 Interpretation:
 - The deterministic mock-backed planner/executor baseline covers the entire 150-case matrix without dropping into the generic fallback answer.
 
-### Live planner sample
+### Live planner validation
 
-Latest sampled live artifact:
-- `backend/app/storage/demo/copilot_live_batch_60.json`
+Latest full-pass live artifact:
+- `backend/app/storage/demo/copilot_harness_results_oauth_live150.json`
 
 Summary:
-- `case_count`: `60`
-- `cases_with_tools`: `51`
-- `cases_with_confirmation`: `15`
+- `case_count`: `150`
+- `cases_with_tools`: `120`
+- `cases_with_confirmation`: `29`
 - `generic_fallback_count`: `0`
-- `direct_answer_count`: `60`
+- `direct_answer_count`: `150`
 
 Interpretation:
-- The live Chutes-backed planner also cleared a broad 60-case representative sample without generic fallback behavior.
+- The live Chutes-backed planner cleared the full 150-case matrix for the OAuth recruiter workspace without generic fallback behavior.
 
 ## What Was Added To Reach This State
 
@@ -61,6 +61,5 @@ Interpretation:
 
 ## Remaining Work
 
-- Expand live-planner coverage from the current 60-case sample toward the full 150-case matrix.
 - Add stronger semantic pass/fail scoring beyond generic-fallback detection for nuanced answer quality.
 - Add API-level and frontend-level executable checks for the UX-sensitive cases already documented in the matrix.
