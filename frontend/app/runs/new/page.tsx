@@ -204,7 +204,7 @@ export default function NewRunPage() {
 
           <Panel title="Tunnel Target">
             <p className="text-sm leading-7 text-slate-600">
-              This flow expects your backend at <code>http://localhost:8000</code> through SSH tunnel or local FastAPI.
+              This flow expects your backend at <code>http://localhost:8001</code> through SSH tunnel or local FastAPI.
               If unavailable, use demo mode to continue UX testing.
             </p>
             <div className="mt-4">

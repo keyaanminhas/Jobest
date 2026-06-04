@@ -6,7 +6,7 @@ FastAPI backend for Jobest multi-agent recruiter MVP.
 - Target runtime: `proot-distro login --user linux linuxdesk`
 - Project root: `/home/linux/projects/jobest/backend`
 - Uses local virtualenv only (`.venv`)
-- Binds to `0.0.0.0:8000` for private Tailscale access
+- Binds to `0.0.0.0:8001` for private Tailscale access
 - Secrets are stored in `.env` only
 
 ## Setup
@@ -22,7 +22,7 @@ cp .env.example .env
 ```bash
 cd /home/linux/projects/jobest/backend
 source .venv/bin/activate
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
 ```
 
 ## Live Provider Mode

@@ -1,5 +1,5 @@
 import React from "react";
-import { Paperclip, Send, ArrowUp, BriefcaseBusiness, ChevronDown } from "lucide-react";
+import { Paperclip, Send, BriefcaseBusiness, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export interface AIPromptBoxProps {
@@ -26,6 +26,9 @@ export function AIPromptBox({
   jobs = [],
 }: AIPromptBoxProps) {
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
+  const recognitionRef = React.useRef<SpeechRecognitionLike | null>(null);
+  const [isListening, setIsListening] = React.useState(false);
+  const [speechSupported, setSpeechSupported] = React.useState(true);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -33,6 +36,84 @@ export function AIPromptBox({
       onSubmit();
     }
   };
+
+  const stopListening = React.useCallback(() => {
+    recognitionRef.current?.stop();
+    recognitionRef.current = null;
+    setIsListening(false);
+  }, []);
+
+  const startListening = React.useCallback(() => {
+    if (typeof window === "undefined") return;
+
+    const SpeechRecognitionCtor =
+      window.SpeechRecognition || window.webkitSpeechRecognition;
+
+    if (!SpeechRecognitionCtor) {
+      setSpeechSupported(false);
+      return;
+    }
+
+    setSpeechSupported(true);
+
+    const recognition = new SpeechRecognitionCtor();
+    recognition.lang = "en-US";
+    recognition.interimResults = true;
+    recognition.continuous = false;
+    recognition.maxAlternatives = 1;
+
+    recognition.onresult = (event) => {
+      const baseText = value.trim();
+      let finalTranscript = "";
+      let interimTranscript = "";
+
+      for (let i = 0; i < event.results.length; i += 1) {
+        const result = event.results[i];
+        const text = result[0]?.transcript?.trim();
+        if (!text) continue;
+        if (result.isFinal) {
+          finalTranscript = finalTranscript ? `${finalTranscript} ${text}` : text;
+        } else {
+          interimTranscript = interimTranscript ? `${interimTranscript} ${text}` : text;
+        }
+      }
+
+      const nextTranscript = [baseText, finalTranscript, interimTranscript].filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
+      onChange(nextTranscript);
+    };
+
+    recognition.onerror = (event) => {
+      stopListening();
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+      recognitionRef.current = null;
+    };
+
+    try {
+      recognition.start();
+    } catch {
+      return;
+    }
+    recognitionRef.current = recognition;
+    setIsListening(true);
+  }, [onChange, stopListening, value]);
+
+  const toggleListening = React.useCallback(() => {
+    if (isListening) {
+      stopListening();
+      return;
+    }
+    startListening();
+  }, [isListening, startListening, stopListening]);
+
+  React.useEffect(() => {
+    return () => {
+      recognitionRef.current?.stop();
+      recognitionRef.current = null;
+    };
+  }, []);
 
   // Auto-resize input textarea
   React.useEffect(() => {
@@ -88,21 +169,91 @@ export function AIPromptBox({
             )}
           </div>
 
-          <button
-            type="button"
-            disabled={isLoading || !value.trim()}
-            onClick={onSubmit}
-            className={cn(
-              "h-9 w-9 rounded-xl flex items-center justify-center transition-all",
-              value.trim()
-                ? "bg-accent text-white hover:bg-blue-700 shadow-sm"
-                : "bg-slate-50 text-slate-400 border border-slate-100"
-            )}
-          >
-            <Send className="h-4 w-4" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={toggleListening}
+              title={isListening ? "Stop dictation" : "Start dictation"}
+              className={cn(
+                "h-9 w-9 rounded-xl flex items-center justify-center transition-all border",
+                isListening
+                  ? "bg-rose-50 text-rose-600 border-rose-200 animate-pulse"
+                  : speechSupported
+                    ? "bg-white text-slate-500 border-slate-200 hover:bg-slate-50 hover:text-slate-700"
+                    : "bg-slate-50 text-slate-300 border-slate-100 cursor-not-allowed"
+              )}
+            >
+              <MicIcon isActive={isListening} />
+            </button>
+
+            <button
+              type="button"
+              disabled={isLoading || !value.trim()}
+              onClick={onSubmit}
+              className={cn(
+                "h-9 w-9 rounded-xl flex items-center justify-center transition-all",
+                value.trim()
+                  ? "bg-accent text-white hover:bg-blue-700 shadow-sm"
+                  : "bg-slate-50 text-slate-400 border border-slate-100"
+              )}
+            >
+              <Send className="h-4 w-4" />
+            </button>
+          </div>
         </div>
       </div>
     </div>
   );
+}
+
+function MicIcon({ isActive }: { isActive: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      className="h-4 w-4"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.9"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M12 14a3 3 0 0 0 3-3V7a3 3 0 0 0-6 0v4a3 3 0 0 0 3 3Z" />
+      <path d="M19 11a7 7 0 0 1-14 0" />
+      <path d="M12 18v3" />
+      <path d="M8 21h8" />
+      {isActive ? <path d="M5 5l14 14" /> : null}
+    </svg>
+  );
+}
+
+type SpeechRecognitionLike = {
+  lang: string;
+  interimResults: boolean;
+  continuous: boolean;
+  maxAlternatives: number;
+  start: () => void;
+  stop: () => void;
+  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
+  onerror: ((event: SpeechRecognitionErrorEventLike) => void) | null;
+  onend: (() => void) | null;
+};
+
+type SpeechRecognitionEventLike = {
+  resultIndex: number;
+  results: Array<{
+    isFinal: boolean;
+    0?: { transcript?: string };
+  }>;
+};
+
+type SpeechRecognitionErrorEventLike = {
+  error: string;
+};
+
+declare global {
+  interface Window {
+    SpeechRecognition?: new () => SpeechRecognitionLike;
+    webkitSpeechRecognition?: new () => SpeechRecognitionLike;
+  }
 }
