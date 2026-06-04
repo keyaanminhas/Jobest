@@ -181,7 +181,7 @@ function associateTracesWithMessages(messages: AgentChatMessage[], traces: Agent
   // it should display any new/unassociated traces (i.e. those created after the last real assistant message).
   const lastMsg = messages[messages.length - 1];
   if (lastMsg && lastMsg.role === "assistant" && lastMsg.metadata?.optimistic) {
-    const lastRealMsg = assistantMessages.find((m) => !m.metadata?.optimistic);
+    const lastRealMsg = assistantMessages.filter((m) => !m.metadata?.optimistic).pop();
     const cutTime = lastRealMsg ? new Date(lastRealMsg.created_at).getTime() : 0;
 
     association[lastMsg.id] = sortedTraces.filter(

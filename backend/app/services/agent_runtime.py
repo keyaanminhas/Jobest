@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import re
 import shutil
+import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -503,9 +504,81 @@ class RecruiterAgentRuntime:
         normalized_args = dict(arguments)
         lower = content.lower()
 
+        # Resolve candidate names in candidate_id or candidate_ids to UUIDs
+        user_candidates = None
+        scoped_posting_id = normalized_args.get("job_posting_id") or session_context.get("job_posting_id")
+
+        async def get_user_candidates():
+            nonlocal user_candidates
+            if user_candidates is None:
+                user_candidates_query = (
+                    select(Candidate)
+                    .join(JobPosting, Candidate.job_posting_id == JobPosting.id)
+                    .where(JobPosting.user_id == user_id)
+                )
+                if scoped_posting_id:
+                    user_candidates_query = user_candidates_query.where(Candidate.job_posting_id == scoped_posting_id)
+                user_candidates = (await db.scalars(user_candidates_query)).all()
+            return user_candidates
+
+        if "candidate_id" in normalized_args and normalized_args["candidate_id"]:
+            cid_str = str(normalized_args["candidate_id"]).strip()
+            is_uuid = False
+            try:
+                uuid.UUID(cid_str)
+                is_uuid = True
+            except ValueError:
+                pass
+            if not is_uuid:
+                candidates_list = await get_user_candidates()
+                best_match = None
+                best_score = 0.0
+                for candidate in candidates_list:
+                    if candidate.display_name.lower().strip() == cid_str.lower().strip():
+                        best_match = candidate
+                        break
+                    score = self._token_overlap_score(candidate.display_name, cid_str)
+                    if score >= 2.0 and score > best_score:
+                        best_score = score
+                        best_match = candidate
+                if best_match:
+                    normalized_args["candidate_id"] = best_match.id
+
+        if "candidate_ids" in normalized_args and isinstance(normalized_args["candidate_ids"], list):
+            resolved_ids = []
+            for cid in normalized_args["candidate_ids"]:
+                cid_str = str(cid).strip()
+                if not cid_str:
+                    continue
+                is_uuid = False
+                try:
+                    uuid.UUID(cid_str)
+                    is_uuid = True
+                except ValueError:
+                    pass
+                if is_uuid:
+                    resolved_ids.append(cid_str)
+                else:
+                    candidates_list = await get_user_candidates()
+                    best_match = None
+                    best_score = 0.0
+                    for candidate in candidates_list:
+                        if candidate.display_name.lower().strip() == cid_str.lower().strip():
+                            best_match = candidate
+                            break
+                        score = self._token_overlap_score(candidate.display_name, cid_str)
+                        if score >= 2.0 and score > best_score:
+                            best_score = score
+                            best_match = candidate
+                    if best_match:
+                        resolved_ids.append(best_match.id)
+                    else:
+                        resolved_ids.append(cid_str)
+            normalized_args["candidate_ids"] = resolved_ids
+
         posting = None
         posting_id = normalized_args.get("job_posting_id") if tool_name else None
-        if tool_name in {"list_candidates", "run_triage_for_job", "run_candidate_full_analysis", "run_stage_on_candidates", "get_job_insights", "update_job_posting", "get_public_application_link", "update_public_application_access", "duplicate_candidate_to_job", "move_candidate_to_job"}:
+        if tool_name in {"list_candidates", "run_triage_for_job", "run_candidate_full_analysis", "run_stage_on_candidates", "get_job_insights", "update_job_posting", "get_public_application_link", "update_public_application_access", "duplicate_candidate_to_job", "move_candidate_to_job", "compare_candidates"}:
             posting = await self._resolve_posting(db, user_id, content, session_context, history)
             posting_id = posting_id or session_context.get("job_posting_id") or (posting.id if posting else None)
             if posting_id:
@@ -2345,4 +2418,3 @@ class RecruiterAgentRuntime:
             "candidate_name": candidate.display_name,
             "questions": result.get("questions") or [],
         }
-
