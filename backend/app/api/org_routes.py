@@ -141,6 +141,18 @@ def _public_application_url(token: str) -> str:
     return f"{_frontend_app_url()}/apply/{token}"
 
 
+def _effective_chutes_redirect_uri(request: Request) -> str:
+    frontend_url = os.getenv("FRONTEND_APP_URL", "").strip().rstrip("/")
+    if frontend_url:
+        return f"{frontend_url}/api/auth/chutes/callback"
+    forwarded_proto = request.headers.get("x-forwarded-proto")
+    forwarded_host = request.headers.get("x-forwarded-host")
+    scheme = forwarded_proto or request.url.scheme
+    host = forwarded_host or request.headers.get("host") or request.url.netloc
+    callback_path = request.app.url_path_for("complete_chutes_auth")
+    return f"{scheme}://{host}{callback_path}"
+
+
 def _chutes_scopes() -> str:
     return os.getenv("CHUTES_OAUTH_SCOPES", "profile:read").strip() or "profile:read"
 
@@ -869,13 +881,13 @@ async def shutdown_analysis_queue() -> None:
 
 
 @router.get("/auth/chutes/start")
-async def start_chutes_auth() -> RedirectResponse:
+async def start_chutes_auth(request: Request) -> RedirectResponse:
     try:
         authorize_url = _required_env("CHUTES_OAUTH_AUTHORIZE_URL")
         client_id = _required_env("CHUTES_OAUTH_CLIENT_ID")
-        redirect_uri = _required_env("CHUTES_OAUTH_REDIRECT_URI")
     except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+    redirect_uri = _effective_chutes_redirect_uri(request)
 
     state = secrets.token_urlsafe(32)
     verifier = secrets.token_urlsafe(64)
@@ -892,6 +904,7 @@ async def start_chutes_auth() -> RedirectResponse:
         url=f"{authorize_url}?{urlencode(params)}",
         status_code=status.HTTP_302_FOUND,
     )
+    response.headers["x-jobest-chutes-redirect-uri"] = redirect_uri
     response.set_cookie(_OAUTH_STATE_COOKIE, state, httponly=True, max_age=600, samesite="lax", path="/")
     response.set_cookie(_OAUTH_VERIFIER_COOKIE, verifier, httponly=True, max_age=600, samesite="lax", path="/")
     return response
@@ -924,9 +937,9 @@ async def complete_chutes_auth(
         userinfo_url = _required_env("CHUTES_OAUTH_USERINFO_URL")
         client_id = _required_env("CHUTES_OAUTH_CLIENT_ID")
         client_secret = _required_env("CHUTES_OAUTH_CLIENT_SECRET")
-        redirect_uri = _required_env("CHUTES_OAUTH_REDIRECT_URI")
     except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+    redirect_uri = _effective_chutes_redirect_uri(request)
 
     try:
         async with httpx.AsyncClient(timeout=20.0) as client:

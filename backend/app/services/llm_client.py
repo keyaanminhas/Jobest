@@ -220,9 +220,10 @@ class LLMClient:
         }
 
         last_error: Exception | None = None
+        timeout_seconds = float(os.getenv("LLM_REQUEST_TIMEOUT_SECONDS", "300"))
         for attempt in range(3):
             try:
-                async with httpx.AsyncClient(timeout=120.0) as client:
+                async with httpx.AsyncClient(timeout=timeout_seconds) as client:
                     resp = await client.post(url, headers=headers, json=body)
 
                 if resp.status_code in {408, 409, 429, 500, 502, 503, 504} and attempt < 2:

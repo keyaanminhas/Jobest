@@ -1,6 +1,6 @@
 import type { NextConfig } from "next";
 
-const backendOrigin = process.env.BACKEND_INTERNAL_ORIGIN ?? "http://127.0.0.1:8000";
+const backendOrigin = process.env.BACKEND_INTERNAL_ORIGIN ?? "http://127.0.0.1:8001";
 const allowedDevOrigins = [
   "http://localhost:3001",
   "http://127.0.0.1:3001",

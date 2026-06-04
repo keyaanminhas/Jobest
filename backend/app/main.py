@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 PROJECT_DIR = Path(__file__).resolve().parents[1]
-load_dotenv(PROJECT_DIR / ".env", override=False)
+load_dotenv(PROJECT_DIR / ".env", override=True)
 
 from app.api.org_routes import router as org_api_router  # noqa: E402
 from app.api.ai_routes import router as ai_api_router  # noqa: E402

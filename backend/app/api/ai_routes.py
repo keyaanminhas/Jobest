@@ -28,6 +28,10 @@ router = APIRouter(prefix="/api/agent-chat", tags=["agent-chat"])
 runtime = RecruiterAgentRuntime()
 MAX_AGENT_TOOL_STEPS = 6
 DEFAULT_COPILOT_TITLE = "Recruiter Copilot"
+GENERIC_CAPABILITY_FALLBACK = (
+    "I can search resumes, inspect jobs and queues, draft postings, rerun triage, queue candidate analysis, "
+    "request focused stage refreshes, and tune safe runtime limits. Name a posting in the message or select it in Context when the action targets one."
+)
 
 
 def _dynamic_tool_step_limit(content: str) -> int:
@@ -237,6 +241,15 @@ def _result_summary(tool_name: str, result: dict) -> str:
             f"retry delay `{result.get('retry_delay_seconds', 0)} seconds`."
         )
     if tool_name == "get_public_application_link":
+        links = result.get("links", [])
+        if links:
+            return "Public application links:\n\n" + "\n".join(
+                (
+                    f"- {row.get('title', 'Unknown posting')}: {row.get('public_application_url', 'Unavailable')} "
+                    f"({'open' if row.get('public_applications_enabled') else 'closed'})"
+                )
+                for row in links
+            )
         return (
             f"Public application link for `{result.get('title', 'Unknown posting')}`:\n\n"
             f"- Link: {result.get('public_application_url', 'Unavailable')}\n"
@@ -510,7 +523,15 @@ async def send_message(
                 arguments = {}
                 metadata["planner"] = f"{metadata['planner']}_coerced"
             else:
-                assistant_text = str(plan.get("answer") or "I need more detail before I can act.")
+                plan_answer = str(plan.get("answer") or "I need more detail before I can act.")
+                if tool_results and plan_answer.strip() == GENERIC_CAPABILITY_FALLBACK:
+                    assistant_text = await runtime.answer_from_tool_results(
+                        content=payload.content,
+                        tool_results=tool_results,
+                        provider_override=provider_override,
+                    )
+                else:
+                    assistant_text = plan_answer
                 break
 
         spec = TOOL_MAP[tool_name]

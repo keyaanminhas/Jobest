@@ -18,7 +18,13 @@ def _default_database_url() -> str:
 
 
 DATABASE_URL = os.getenv("DATABASE_URL", _default_database_url())
-engine = create_async_engine(DATABASE_URL, pool_pre_ping=True)
+SQLITE_BUSY_TIMEOUT_SECONDS = int(os.getenv("SQLITE_BUSY_TIMEOUT_SECONDS", "300"))
+connect_args = (
+    {"timeout": SQLITE_BUSY_TIMEOUT_SECONDS}
+    if DATABASE_URL.startswith("sqlite+aiosqlite")
+    else {}
+)
+engine = create_async_engine(DATABASE_URL, pool_pre_ping=True, connect_args=connect_args)
 SessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
@@ -32,6 +38,10 @@ async def init_db_schema() -> None:
     from app import models  # noqa: F401
 
     async with engine.begin() as connection:
+        if DATABASE_URL.startswith("sqlite+aiosqlite"):
+            await connection.exec_driver_sql("PRAGMA journal_mode=WAL")
+            await connection.exec_driver_sql(f"PRAGMA busy_timeout={SQLITE_BUSY_TIMEOUT_SECONDS * 1000}")
+
         await connection.run_sync(Base.metadata.create_all)
         await connection.exec_driver_sql(
             """
