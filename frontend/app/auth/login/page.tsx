@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useState, useTransition } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { getChutesAuthUrl, login } from "@/lib/api";
 import { Eye, EyeOff, ArrowRight, CheckCircle2, Sparkles } from "lucide-react";
 
@@ -16,7 +16,7 @@ const features = [
 function LoginPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [pending, startTransition] = useTransition();
+  const [submitting, setSubmitting] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -29,16 +29,20 @@ function LoginPageContent() {
     }
   }, [searchParams]);
 
-  function submit() {
+  async function submit() {
+    if (submitting) {
+      return;
+    }
     setError("");
-    startTransition(async () => {
-      try {
-        await login(email.trim(), password);
-        router.replace("/jobs");
-      } catch (requestError) {
-        setError(requestError instanceof Error ? requestError.message : "Login failed.");
-      }
-    });
+    setSubmitting(true);
+    try {
+      await login(email.trim(), password);
+      router.replace("/jobs");
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Login failed.");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -174,10 +178,10 @@ function LoginPageContent() {
 
             <button
               type="submit"
-              disabled={pending || !email || !password}
+              disabled={submitting || !email || !password}
               className="group flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-accent px-5 py-3 text-[14px] font-semibold text-white transition-colors duration-150 hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {pending ? (
+              {submitting ? (
                 <>
                   <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
                   Signing in…

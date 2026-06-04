@@ -42,7 +42,7 @@ class UserAgentSettings(Base):
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), unique=True, index=True)
     provider: Mapped[str] = mapped_column(String(64), default="chutes")
     base_url: Mapped[str] = mapped_column(Text, default="https://llm.chutes.ai/v1")
-    model: Mapped[str] = mapped_column(String(255), default="Qwen/Qwen2.5-Coder-32B-Instruct-TEE")
+    model: Mapped[str] = mapped_column(String(255), default="deepseek-ai/DeepSeek-V3.2-TEE")
     encrypted_api_key: Mapped[str | None] = mapped_column(Text, nullable=True)
     api_key_last4: Mapped[str | None] = mapped_column(String(8), nullable=True)
     parallel_agents_limit: Mapped[int] = mapped_column(default=1)

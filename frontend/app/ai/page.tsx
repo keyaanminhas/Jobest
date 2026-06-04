@@ -102,34 +102,66 @@ function isUploadIntent(prompt: string) {
   return ["upload", "attach", "add this resume", "add this cv", "assign this resume", "assign this cv"].some((token) => lower.includes(token));
 }
 
-function MarkdownMessage({ content, user }: { content: string; user: boolean }) {
+function MarkdownMessage({ content, variant = "assistant" }: { content: string; variant?: "assistant" | "user" }) {
+  if (variant === "user") {
+    return <div className="whitespace-pre-wrap text-[14px] leading-7 text-slate-800">{content}</div>;
+  }
+
   return (
-    <div className={`prose prose-sm max-w-none ${user ? "prose-invert" : "prose-slate"}`}>
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        components={{
-          p: ({ children }) => <p className="my-0 whitespace-pre-wrap">{children}</p>,
-          ul: ({ children }) => <ul className="my-2 list-disc pl-5">{children}</ul>,
-          ol: ({ children }) => <ol className="my-2 list-decimal pl-5">{children}</ol>,
-          li: ({ children }) => <li className="my-1">{children}</li>,
-          h1: ({ children }) => <h1 className="mb-2 mt-0 text-base font-semibold">{children}</h1>,
-          h2: ({ children }) => <h2 className="mb-2 mt-0 text-[15px] font-semibold">{children}</h2>,
-          h3: ({ children }) => <h3 className="mb-2 mt-0 text-sm font-semibold">{children}</h3>,
-          hr: () => <hr className="my-3 border-slate-200" />,
-          code: ({ className, children }) =>
-            className ? (
-              <code className="block overflow-x-auto whitespace-pre rounded-lg bg-slate-900/95 px-3 py-2 text-[12px] text-slate-100">
-                {children}
-              </code>
-            ) : (
-              <code className="rounded bg-black/10 px-1 py-0.5 text-[0.9em]">{children}</code>
+    <div className="rounded-[28px] border border-slate-200/80 bg-white/95 px-5 py-4 shadow-sm ring-1 ring-slate-100/70">
+      <div className="space-y-5 text-[14px] leading-7 text-slate-700">
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
+          components={{
+            p: ({ children }) => <p className="m-0">{children}</p>,
+            ul: ({ children }) => <ul className="m-0 list-disc space-y-2 pl-5">{children}</ul>,
+            ol: ({ children }) => <ol className="m-0 list-decimal space-y-2 pl-5">{children}</ol>,
+            li: ({ children }) => <li className="pl-1">{children}</li>,
+            h1: ({ children }) => (
+              <h1 className="m-0 text-[1.2rem] font-semibold tracking-tight text-slate-900">{children}</h1>
             ),
-          pre: ({ children }) => <pre className="my-2 overflow-x-auto">{children}</pre>,
-          strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
-        }}
-      >
-        {content}
-      </ReactMarkdown>
+            h2: ({ children }) => (
+              <h2 className="m-0 border-b border-slate-200/80 pb-2 pt-1 text-[1.05rem] font-semibold tracking-tight text-slate-900">
+                {children}
+              </h2>
+            ),
+            h3: ({ children }) => <h3 className="m-0 text-[0.98rem] font-semibold text-slate-800">{children}</h3>,
+            hr: () => <hr className="my-1 border-slate-200/80" />,
+            blockquote: ({ children }) => (
+              <blockquote className="m-0 rounded-2xl border-l-4 border-blue-200 bg-blue-50/60 px-4 py-3 text-slate-700">
+                {children}
+              </blockquote>
+            ),
+            table: ({ children }) => (
+              <div className="my-1 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50/80 shadow-sm">
+                <table className="w-full border-collapse text-left text-[13px]">{children}</table>
+              </div>
+            ),
+            thead: ({ children }) => <thead className="bg-slate-100/90 text-[10px] uppercase tracking-[0.12em] text-slate-500">{children}</thead>,
+            tbody: ({ children }) => <tbody className="bg-white">{children}</tbody>,
+            tr: ({ children }) => <tr className="odd:bg-white even:bg-slate-50/40">{children}</tr>,
+            th: ({ children }) => <th className="border-b border-slate-200 px-4 py-3 font-semibold text-slate-600">{children}</th>,
+            td: ({ children }) => <td className="border-b border-slate-100 px-4 py-3 align-top text-slate-700">{children}</td>,
+            code: ({ className, children }) =>
+              className ? (
+                <code className="block overflow-x-auto rounded-xl bg-slate-950 px-4 py-3 font-mono text-[12px] leading-6 text-slate-100">
+                  {children}
+                </code>
+              ) : (
+                <code className="rounded-md bg-slate-100 px-1.5 py-0.5 font-medium text-slate-800">{children}</code>
+              ),
+            pre: ({ children }) => <pre className="m-0 overflow-x-auto">{children}</pre>,
+            strong: ({ children }) => <strong className="font-semibold text-slate-900">{children}</strong>,
+            a: ({ children, href }) => (
+              <a href={href} className="font-medium text-accent underline decoration-accent/30 underline-offset-2">
+                {children}
+              </a>
+            ),
+          }}
+        >
+          {content}
+        </ReactMarkdown>
+      </div>
     </div>
   );
 }
@@ -267,6 +299,8 @@ export default function AiCopilotPage() {
   function newSession() {
     setError("");
     setHistoryOpen(false);
+    setIsResponding(false);
+    setOptimisticMessages([]);
     startTransition(async () => {
       try {
         const created = await createAgentChatSession({
@@ -274,7 +308,6 @@ export default function AiCopilotPage() {
           job_posting_id: selectedJobId || null,
         });
         setSession(created);
-        setOptimisticMessages([]);
         await refreshSessionList();
       } catch (exc) {
         setError(exc instanceof Error ? exc.message : "Failed creating session.");
@@ -285,12 +318,13 @@ export default function AiCopilotPage() {
   function openSession(sessionId: string) {
     setError("");
     setHistoryOpen(false);
+    setIsResponding(false);
+    setOptimisticMessages([]);
     startTransition(async () => {
       try {
         const opened = await getAgentChatSession(sessionId);
         setSession(opened);
         setSelectedJobId(opened.job_posting_id || "");
-        setOptimisticMessages([]);
       } catch (exc) {
         setError(exc instanceof Error ? exc.message : "Failed opening session.");
       }
@@ -503,25 +537,38 @@ export default function AiCopilotPage() {
             if (isLoading) {
               return (
                 <div key={row.id} className="flex justify-start py-4">
+                  <style>{`
+                    @keyframes thinking-wave {
+                      0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+                      30% { transform: translateY(-5px); opacity: 1; }
+                    }
+                    @keyframes thinking-label {
+                      0%, 100% { opacity: 0.5; }
+                      50% { opacity: 1; }
+                    }
+                  `}</style>
                   <div className="flex gap-4 w-full max-w-[85%]">
                     <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-blue-50 text-accent border border-blue-100/50">
                       <Bot className="h-4.5 w-4.5" />
                     </div>
                     <div className="flex-1 space-y-2">
                       <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">Jobest AI</div>
-                      <div className="flex items-center gap-3">
-                        <span className="flex items-center gap-1">
+                      <div className="flex items-center gap-2.5">
+                        <span className="flex items-center gap-[5px]">
                           {[0, 1, 2].map((i) => (
                             <span
                               key={i}
-                              className="inline-block h-1.5 w-1.5 rounded-full bg-accent"
+                              className="inline-block h-2 w-2 rounded-full bg-accent"
                               style={{
-                                animation: `bounce 1.2s ease-in-out ${i * 0.2}s infinite`,
+                                animation: `thinking-wave 1.4s ease-in-out ${i * 0.18}s infinite`,
                               }}
                             />
                           ))}
                         </span>
-                        <span className="text-xs text-slate-400 font-medium">Thinking…</span>
+                        <span
+                          className="text-xs text-slate-400 font-medium"
+                          style={{ animation: "thinking-label 2s ease-in-out infinite" }}
+                        >Thinking…</span>
                       </div>
                       
                       {msgTraces && msgTraces.length > 0 && (
@@ -549,7 +596,7 @@ export default function AiCopilotPage() {
                     </div>
                     <div className="rounded-2xl bg-accent/5 border border-accent/10 px-4 py-2.5 text-slate-800 text-sm leading-relaxed shadow-sm">
                       <div className="text-[9px] font-bold text-accent uppercase tracking-wider mb-1">You</div>
-                      <MarkdownMessage content={row.content} user={false} />
+                      <MarkdownMessage content={row.content} variant="user" />
                     </div>
                   </div>
                 </div>
@@ -564,9 +611,7 @@ export default function AiCopilotPage() {
                   </div>
                   <div className="flex-1 space-y-2">
                     <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">Jobest AI</div>
-                    <div className="text-slate-800 text-sm leading-relaxed">
-                      <MarkdownMessage content={row.content} user={false} />
-                    </div>
+                    <MarkdownMessage content={row.content} />
                     
                     {msgTraces && msgTraces.length > 0 && (
                       <div className="mt-3">

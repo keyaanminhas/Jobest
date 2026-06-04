@@ -50,7 +50,7 @@ async def init_db_schema() -> None:
                 user_id VARCHAR(36) UNIQUE,
                 provider VARCHAR(64) NOT NULL DEFAULT 'chutes',
                 base_url TEXT NOT NULL DEFAULT 'https://llm.chutes.ai/v1',
-                model VARCHAR(255) NOT NULL DEFAULT 'Qwen/Qwen2.5-Coder-32B-Instruct-TEE',
+                model VARCHAR(255) NOT NULL DEFAULT 'deepseek-ai/DeepSeek-V3.2-TEE',
                 encrypted_api_key TEXT,
                 api_key_last4 VARCHAR(8),
                 parallel_agents_limit INTEGER NOT NULL DEFAULT 1,

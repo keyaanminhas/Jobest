@@ -36,7 +36,26 @@ GENERIC_CAPABILITY_FALLBACK = (
 
 def _dynamic_tool_step_limit(content: str) -> int:
     lower = content.lower()
-    if any(token in lower for token in ("most candidates", "least candidates", "fewest candidates", "candidate count")):
+    compound_markers = (
+        ("compare", "report"),
+        ("compare", "outreach email"),
+        ("report", "outreach email"),
+        ("then", "finally"),
+    )
+    if any(all(marker in lower for marker in markers) for markers in compound_markers):
+        return max(MAX_AGENT_TOOL_STEPS, 8)
+    if any(
+        token in lower
+        for token in (
+            "most candidates",
+            "least candidates",
+            "fewest candidates",
+            "candidate count",
+            "how many candidates",
+            "how many current candidates",
+            "current candidates",
+        )
+    ):
         return 3
     if any(token in lower for token in ("compare candidates", "side-by-side", "versus", "vs")):
         return 4
@@ -45,12 +64,52 @@ def _dynamic_tool_step_limit(content: str) -> int:
     return MAX_AGENT_TOOL_STEPS
 
 
-def _is_candidate_count_comparison_prompt(content: str) -> bool:
+def _is_scoped_candidate_list_prompt(content: str) -> bool:
     lower = content.lower()
     return (
-        any(token in lower for token in ("most candidates", "least candidates", "fewest candidates", "candidate count"))
-        and any(token in lower for token in ("job", "posting", "listing", "position", "role"))
+        any(
+            token in lower
+            for token in (
+                "name all the candidates",
+                "name all candidates",
+                "name each candidate",
+                "name each one",
+                "list all candidates",
+                "show all candidates",
+                "all the candidates",
+                "all candidates",
+                "applicants",
+            )
+        )
+        or (
+            any(token in lower for token in ("how many candidates", "how many current candidates", "current candidates"))
+            and any(token in lower for token in ("here", "this posting", "this job", "this role", "in this posting"))
+        )
     )
+
+
+def _is_workspace_candidate_count_prompt(content: str) -> bool:
+    lower = content.lower()
+    return (
+        any(
+            token in lower
+            for token in (
+                "most candidates",
+                "least candidates",
+                "fewest candidates",
+                "candidate count",
+                "how many candidates",
+                "how many current candidates",
+                "current candidates",
+            )
+        )
+        and not _is_scoped_candidate_list_prompt(content)
+    )
+
+
+def _is_candidate_count_comparison_prompt(content: str) -> bool:
+    lower = content.lower()
+    return _is_workspace_candidate_count_prompt(content) and any(token in lower for token in ("job", "posting", "listing", "position", "role"))
 
 
 def _message_item(row: AgentChatMessage) -> AgentChatMessageItem:
@@ -303,14 +362,16 @@ def _result_summary(tool_name: str, result: dict) -> str:
         candidates = result.get("candidates", [])
         comparison = result.get("comparison") or ""
         recommended = result.get("recommended") or "None"
-        
+
         matrix_rows = []
         for c in candidates:
-            matrix_rows.append(f"| **{c.get('name')}** | {c.get('score', 'N/A')} | {c.get('verdict')} |")
-            
+            matrix_rows.append(
+                f"| **{c.get('name')}** | {c.get('role') or 'Unknown'} | {c.get('triage_score', 'N/A')} | {c.get('score', 'N/A')} | {c.get('verdict')} |"
+            )
+
         matrix_table = (
-            "| Candidate | Score | Brief Verdict |\n"
-            "| --- | --- | --- |\n"
+            "| Candidate | Role | Triage | Score | Brief Verdict |\n"
+            "| --- | --- | --- | --- | --- |\n"
             + "\n".join(matrix_rows)
         )
         
@@ -476,7 +537,8 @@ async def send_message(
     tool_results: list[dict[str, object]] = []
     seen_read_signatures: set[str] = set()
     assistant_text = "I need more detail before I can act."
-    candidate_count_prompt = _is_candidate_count_comparison_prompt(payload.content)
+    workspace_candidate_count_prompt = _is_workspace_candidate_count_prompt(payload.content)
+    scoped_candidate_list_prompt = _is_scoped_candidate_list_prompt(payload.content)
 
     step_limit = _dynamic_tool_step_limit(payload.content)
     for _ in range(step_limit):
@@ -493,7 +555,7 @@ async def send_message(
         tool_name = plan.get("tool_name")
         arguments = plan.get("arguments") or {}
         if (
-            candidate_count_prompt
+            workspace_candidate_count_prompt
             and tool_results
             and not any(row.get("tool_name") == "get_workspace_summary" for row in tool_results)
             and tool_name in {"list_job_postings", "list_candidates"}
@@ -518,20 +580,25 @@ async def send_message(
             session_context["candidate_id"] = resolved_candidate_id
 
         if tool_name is None:
-            if candidate_count_prompt and not any(row.get("tool_name") == "get_workspace_summary" for row in tool_results):
+            if workspace_candidate_count_prompt and not any(row.get("tool_name") == "get_workspace_summary" for row in tool_results):
                 tool_name = "get_workspace_summary"
                 arguments = {}
                 metadata["planner"] = f"{metadata['planner']}_coerced"
+            elif scoped_candidate_list_prompt and not any(row.get("tool_name") == "list_candidates" for row in tool_results):
+                tool_name = "list_candidates"
+                arguments = {"job_posting_id": session.job_posting_id} if session.job_posting_id else {}
+                metadata["planner"] = f"{metadata['planner']}_coerced"
             else:
-                plan_answer = str(plan.get("answer") or "I need more detail before I can act.")
-                if tool_results and plan_answer.strip() == GENERIC_CAPABILITY_FALLBACK:
+                if tool_results:
+                    # Always synthesize from tool results — never trust the planner's
+                    # raw text when we already have completed tool data.
                     assistant_text = await runtime.answer_from_tool_results(
                         content=payload.content,
                         tool_results=tool_results,
                         provider_override=provider_override,
                     )
                 else:
-                    assistant_text = plan_answer
+                    assistant_text = str(plan.get("answer") or "I need more detail before I can act.")
                 break
 
         spec = TOOL_MAP[tool_name]

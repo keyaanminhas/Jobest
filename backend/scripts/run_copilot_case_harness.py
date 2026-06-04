@@ -149,7 +149,23 @@ async def run_case(
                 break
             seen_read_signatures.add(signature)
 
-            result = await runtime.execute(db, user_id=user.id, tool_name=tool_name, arguments=arguments)
+            try:
+                result = await runtime.execute(db, user_id=user.id, tool_name=tool_name, arguments=arguments)
+            except Exception as exc:
+                error_text = f"I could not run `{tool_name}`: {exc}"
+                tool_steps.append(
+                    {
+                        "tool_name": tool_name,
+                        "risk_class": spec.risk_class,
+                        "status": "error",
+                        "arguments": arguments,
+                        "planner": planner,
+                        "error": str(exc),
+                    }
+                )
+                assistant_text = error_text
+                break
+
             summary = _result_summary(tool_name, result)
             tool_results.append(
                 {

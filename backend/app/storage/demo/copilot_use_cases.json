@@ -1,6 +1,6 @@
 {
   "source": "docs\\copilot-use-cases.md",
-  "generated_case_count": 150,
+  "generated_case_count": 154,
   "cases": [
     {
       "id": 1,
@@ -404,6 +404,42 @@
       "section": "C. Candidate Listing and Candidate Resolution",
       "prompt": "How many candidates are attached to each role?",
       "expected": "Aggregate counts per posting across the workspace.",
+      "scope_hint": "workspace",
+      "action_class": "read_or_direct_answer"
+    },
+    {
+      "id": 151,
+      "slug": "151-how-many-candidates-here",
+      "section": "C. Candidate Listing and Candidate Resolution",
+      "prompt": "How many candidates here?",
+      "expected": "Use the selected posting context and return the count for that posting.",
+      "scope_hint": "job",
+      "action_class": "read_or_direct_answer"
+    },
+    {
+      "id": 152,
+      "slug": "152-can-you-name-all-the-candidates",
+      "section": "C. Candidate Listing and Candidate Resolution",
+      "prompt": "Can you name all the candidates?",
+      "expected": "List the candidates in the active posting scope if one is selected, otherwise ask for scope or list workspace candidates.",
+      "scope_hint": "job",
+      "action_class": "read_or_direct_answer"
+    },
+    {
+      "id": 153,
+      "slug": "153-how-many-current-candidates",
+      "section": "C. Candidate Listing and Candidate Resolution",
+      "prompt": "How many current candidates?",
+      "expected": "Return workspace-wide candidate totals and related posting counts.",
+      "scope_hint": "workspace",
+      "action_class": "read_or_direct_answer"
+    },
+    {
+      "id": 154,
+      "slug": "154-how-many-resumes-did-we-get",
+      "section": "D. Resume Search and Evidence Search",
+      "prompt": "How many resumes did we get?",
+      "expected": "Map the request to resume/candidate coverage and return a count or an explanation of the available workspace data.",
       "scope_hint": "workspace",
       "action_class": "read_or_direct_answer"
     },

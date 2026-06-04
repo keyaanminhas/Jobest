@@ -116,19 +116,23 @@ class RecruiterAgentRuntime:
         if not tool_results:
             return "I need more detail before I can act."
 
-        aggregate = self._aggregate_tool_insights(content, tool_results)
-        if aggregate:
-            return aggregate
+        draft_answer = self._aggregate_tool_insights(content, tool_results) or ""
 
         prompt = (
             "You are Jobest Recruiter Copilot. The tools have already been called. "
-            "Write the final recruiter-facing answer in markdown using only the tool results provided. "
-            "Do not call tools. Do not ask for more tool use unless the results are clearly insufficient. "
-            "Answer the user's actual question directly and concisely."
+            "Write the final recruiter-facing answer in polished, spacious markdown using only the tool results provided. "
+            "Preserve all factual content from the tool results and organize it into an executive-summary style report with clear sectioning, generous spacing, and a professional tone. "
+            "Use a clean hierarchy such as a short summary section followed by comparison, report, and outreach sections when they are relevant. "
+            "Separate every major block with a blank line, keep paragraphs short, and prefer bullets for dense detail. "
+            "Tables should have a blank line before and after them. Section headings should be easy to scan and should not be crowded by surrounding text. "
+            "Prefer this structure when it fits the content: brief summary, comparison table, detailed notes, report section, outreach draft. "
+            "Do not call tools. Do not invent new facts. Do not omit any completed tool outputs if they are relevant. "
+            "If a draft answer is provided, improve its formatting and separation rather than replacing the meaning."
         )
         payload = {
             "message": content,
             "tool_results": tool_results[-8:],
+            "draft_answer": draft_answer,
         }
         try:
             data = await self.llm.call_agent(
@@ -143,16 +147,196 @@ class RecruiterAgentRuntime:
             else:
                 answer = str(data or "").strip()
             if answer:
-                return answer
+                return self._polish_markdown_spacing(answer)
         except Exception:
             pass
 
-        return str(tool_results[-1].get("summary") or "I gathered the data, but I could not summarize it cleanly.")
+        if draft_answer:
+            return self._polish_markdown_spacing(draft_answer)
+        return self._polish_markdown_spacing(
+            str(tool_results[-1].get("summary") or "I gathered the data, but I could not summarize it cleanly.")
+        )
+
+    def _polish_markdown_spacing(self, text: str) -> str:
+        cleaned = str(text or "").replace("\r\n", "\n").replace("\r", "\n")
+        cleaned = re.sub(r"[ \t]+\n", "\n", cleaned)
+        cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+
+        lines = cleaned.split("\n")
+        rebuilt: list[str] = []
+        in_code_block = False
+        in_table_block = False
+        previous_blank = False
+
+        for raw_line in lines:
+            line = raw_line.rstrip()
+            stripped = line.strip()
+
+            if stripped.startswith("```"):
+                if rebuilt and rebuilt[-1] != "":
+                    rebuilt.append("")
+                rebuilt.append(stripped)
+                in_code_block = not in_code_block
+                previous_blank = False
+                continue
+
+            if in_code_block:
+                rebuilt.append(line)
+                previous_blank = False
+                continue
+
+            if not stripped:
+                if rebuilt and not previous_blank:
+                    rebuilt.append("")
+                previous_blank = True
+                continue
+
+            if re.match(r"^#{1,6}\s+", stripped):
+                if rebuilt and rebuilt[-1] != "":
+                    rebuilt.append("")
+                rebuilt.append(stripped)
+                rebuilt.append("")
+                previous_blank = True
+                in_table_block = False
+                continue
+
+            if re.match(r"^(-{3,}|\*{3,}|_{3,})$", stripped):
+                if rebuilt and rebuilt[-1] != "":
+                    rebuilt.append("")
+                rebuilt.append("---")
+                rebuilt.append("")
+                previous_blank = True
+                in_table_block = False
+                continue
+
+            if stripped.startswith("|"):
+                if not in_table_block and rebuilt and rebuilt[-1] != "":
+                    rebuilt.append("")
+                rebuilt.append(stripped)
+                in_table_block = True
+                previous_blank = False
+                continue
+
+            in_table_block = False
+
+            if re.match(r"^(\*|\-|\+|\d+\.)\s+", stripped):
+                rebuilt.append(stripped)
+                previous_blank = False
+                continue
+
+            rebuilt.append(stripped)
+            previous_blank = False
+
+        cleaned = "\n".join(rebuilt)
+        cleaned = re.sub(r"(#{1,6}\s+[^\n]+)\n(?=\S)", r"\1\n\n", cleaned)
+        cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+        return cleaned
 
     def _aggregate_tool_insights(self, content: str, tool_results: list[dict[str, Any]]) -> str | None:
         lower = content.lower()
         if not tool_results:
             return None
+
+        compare_results = [row for row in tool_results if row.get("tool_name") == "compare_candidates"]
+        candidate_detail_results = [row for row in tool_results if row.get("tool_name") == "get_candidate_detail"]
+        candidate_report_results = [row for row in tool_results if row.get("tool_name") == "get_candidate_report"]
+        outreach_results = [row for row in tool_results if row.get("tool_name") == "generate_outreach_email"]
+
+        requested_compare = any(token in lower for token in ("compare", "comparison", "side by side", "versus", "vs"))
+        requested_report = "report" in lower
+        requested_email = any(
+            token in lower
+            for token in ("outreach email", "rejection email", "draft email", "write email", "contact candidate", "candidate email")
+        )
+
+        if (requested_compare and compare_results) or candidate_report_results or outreach_results:
+            sections: list[str] = []
+            summary_lines: list[str] = []
+
+            compare_result = compare_results[-1].get("result", {}) if compare_results else None
+            if isinstance(compare_result, dict) and compare_result.get("candidates"):
+                rows = compare_result.get("candidates", [])
+                summary_lines.append(f"- Compared **{len(rows)}** candidate record(s).")
+                matrix_table = (
+                    "| Candidate | Role | Triage | Final | Verdict |\n"
+                    "| --- | --- | --- | --- | --- |\n"
+                    + "\n".join(
+                        f"| **{row.get('name', 'Unknown')}** | {row.get('role') or 'Unknown'} | {row.get('triage_score', 'N/A')} | {row.get('score', 'N/A')} | {row.get('verdict') or 'Unknown'} |"
+                        for row in rows
+                    )
+                )
+                compare_body = str(compare_result.get("comparison") or "").strip()
+                recommendation = str(compare_result.get("recommended") or "").strip()
+                compare_section = f"## Candidate Comparison\n\n{matrix_table}"
+                if compare_body:
+                    compare_section += f"\n\n{compare_body}"
+                if recommendation:
+                    compare_section += f"\n\n**Recommended candidate:** {recommendation}"
+                sections.append(compare_section)
+            elif requested_compare and len(candidate_detail_results) >= 2:
+                detail_rows = []
+                for row in candidate_detail_results:
+                    result = row.get("result", {})
+                    if isinstance(result, dict) and result.get("candidate_name"):
+                        detail_rows.append(result)
+                if detail_rows:
+                    summary_lines.append(f"- Compared **{len(detail_rows)}** candidate record(s).")
+                    matrix_table = (
+                        "| Candidate | Role | Triage | Final | Recommendation |\n"
+                        "| --- | --- | --- | --- | --- |\n"
+                        + "\n".join(
+                            f"| **{row.get('candidate_name', 'Unknown')}** | {row.get('job_posting_title') or 'Unknown'} | {row.get('triage_score', 'N/A')} | {row.get('final_score', 'N/A')} | {row.get('recommendation') or row.get('analysis_status') or 'Unknown'} |"
+                            for row in detail_rows
+                        )
+                    )
+                    sections.append(f"## Candidate Comparison\n\n{matrix_table}")
+
+            if candidate_report_results:
+                report_result = candidate_report_results[-1].get("result", {})
+                if isinstance(report_result, dict):
+                    report = report_result.get("report", {}) if isinstance(report_result.get("report"), dict) else {}
+                    score = report_result.get("score", {}) if isinstance(report_result.get("score"), dict) else {}
+                    summary = str(report.get("summary") or "").strip()
+                    candidate_name = str(report_result.get("candidate_name") or "").strip() or None
+                    report_candidate_id = str(report_result.get("candidate_id") or "")
+                    for row in candidate_detail_results:
+                        detail = row.get("result", {})
+                        if isinstance(detail, dict) and str(detail.get("candidate_id") or "") == report_candidate_id:
+                            candidate_name = detail.get("candidate_name")
+                            break
+                    if candidate_name:
+                        summary_lines.append(f"- Prepared a detailed report for **{candidate_name}**.")
+                    report_section = f"## Candidate Report{f' for {candidate_name}' if candidate_name else ''}"
+                    report_lines = []
+                    if score.get("final_score") is not None:
+                        report_lines.append(f"- Final score: **{score.get('final_score')}**")
+                    if score.get("recommendation"):
+                        report_lines.append(f"- Recommendation: **{score.get('recommendation')}**")
+                    if summary:
+                        report_lines.append("")
+                        report_lines.append(summary)
+                    if report_lines:
+                        report_section += "\n\n" + "\n".join(report_lines)
+                    sections.append(report_section)
+
+            if outreach_results:
+                email_result = outreach_results[-1].get("result", {})
+                if isinstance(email_result, dict):
+                    candidate_name = email_result.get("candidate_name") or "Candidate"
+                    subject = str(email_result.get("email_subject") or "").strip()
+                    body = str(email_result.get("email_body") or "").strip()
+                    email_type = str(email_result.get("email_type") or "outreach").title()
+                    summary_lines.append(f"- Drafted an outreach email for **{candidate_name}**.")
+                    sections.append(
+                        f"## {email_type} Email Draft for {candidate_name}\n\n"
+                        f"**Subject:** {subject}\n\n---\n\n{body}\n\n---"
+                    )
+
+            if summary_lines:
+                sections.insert(0, "## Executive Summary\n\n" + "\n".join(summary_lines))
+
+            if sections:
+                return "\n\n".join(section for section in sections if section.strip())
 
         if (
             any(token in lower for token in ("applied to", "applied for", "apply to"))
@@ -346,8 +530,14 @@ class RecruiterAgentRuntime:
                     f"{job_posting.get('hiring_context') or 'No hiring context is stored yet.'}"
                 )
 
-        candidate_detail = next((row.get("result", {}) for row in tool_results if row.get("tool_name") == "get_candidate_detail"), None)
-        if isinstance(candidate_detail, dict) and candidate_detail.get("candidate_name"):
+        candidate_detail = next((row.get("result", {}) for row in candidate_detail_results), None)
+        if (
+            isinstance(candidate_detail, dict)
+            and candidate_detail.get("candidate_name")
+            and not compare_results
+            and not candidate_report_results
+            and not outreach_results
+        ):
             return (
                 f"### {candidate_detail.get('candidate_name')}\n\n"
                 f"- Role: `{candidate_detail.get('job_posting_title', 'Unknown role')}`\n"
@@ -538,7 +728,7 @@ class RecruiterAgentRuntime:
                         best_match = candidate
                         break
                     score = self._token_overlap_score(candidate.display_name, cid_str)
-                    if score >= 2.0 and score > best_score:
+                    if score >= 2.5 and score > best_score:
                         best_score = score
                         best_match = candidate
                 if best_match:
@@ -603,7 +793,7 @@ class RecruiterAgentRuntime:
         if tool_name == "list_candidates" and ("completed analysis" in lower or "completed candidates" in lower):
             normalized_args["completed_only"] = True
 
-        if tool_name in {"get_candidate_report", "run_candidate_full_analysis", "run_stage_on_candidates", "duplicate_candidate_to_job", "move_candidate_to_job"}:
+        if tool_name in {"get_candidate_report", "run_candidate_full_analysis", "run_stage_on_candidates", "duplicate_candidate_to_job", "move_candidate_to_job", "generate_outreach_email"}:
             candidate = await self._resolve_candidate(
                 db,
                 user_id,
@@ -617,7 +807,7 @@ class RecruiterAgentRuntime:
                 normalized_args["candidate_id"] = candidate_id
             if tool_name in {"run_candidate_full_analysis", "run_stage_on_candidates"} and candidate_id and not normalized_args.get("candidate_ids"):
                 normalized_args["candidate_ids"] = [candidate_id]
-            if tool_name in {"duplicate_candidate_to_job", "move_candidate_to_job"} and candidate_id:
+            if tool_name in {"duplicate_candidate_to_job", "move_candidate_to_job", "generate_outreach_email"} and candidate_id:
                 normalized_args["candidate_id"] = candidate_id
         if tool_name == "get_candidate_detail":
             candidate = await self._resolve_candidate(
@@ -631,6 +821,8 @@ class RecruiterAgentRuntime:
             candidate_id = normalized_args.get("candidate_id") or session_context.get("candidate_id") or (candidate.id if candidate else None)
             if candidate_id:
                 normalized_args["candidate_id"] = candidate_id
+            if "report" in lower:
+                tool_name = "get_candidate_report"
 
         if tool_name in {"search_resumes", "find_unsupported_claims"} and not str(normalized_args.get("query") or "").strip():
             query = self._extract_search_query(content)
@@ -646,7 +838,15 @@ class RecruiterAgentRuntime:
         ):
             normalized_args["stage_mode"] = "isolated"
 
-        if tool_name is None and not answer.strip():
+        if tool_name == "list_candidates" and self._is_workspace_candidate_count_prompt(content):
+            return {"tool_name": "get_workspace_summary", "arguments": {}, "answer": "", "planner": "llm"}
+        if tool_name == "get_workspace_summary" and self._is_scoped_candidate_list_prompt(content):
+            normalized_args = {"job_posting_id": scoped_posting_id} if scoped_posting_id else {}
+            return {"tool_name": "list_candidates", "arguments": normalized_args, "answer": "", "planner": "llm"}
+
+        if tool_name is None and (not answer.strip() or self._looks_generic_capability_answer(answer)):
+            if self._is_common_recruiter_read_prompt(content):
+                return await self._heuristic_plan(db, user_id, content, session_context, history)
             if tool_name is None and ("this posting" in lower or "this job" in lower or "this job listing" in lower) and not session_context.get("job_posting_id"):
                 return {
                     "tool_name": "list_job_postings",
@@ -714,43 +914,16 @@ class RecruiterAgentRuntime:
 
         prior_tool_results = tool_results or []
         lower = content.lower()
-        deterministic_phrases = (
-            "what tools can you access",
-            "what tools do you have",
-            "which tools can you access",
-            "which tools do you have",
-            "what tools can you call",
-            "what can you access",
-            "list all job postings",
-            "list job postings",
-            "list jobs",
-            "show jobs",
-            "show all jobs",
-            "job postings in this workspace",
-            "summarize this workspace",
-            "workspace summary",
-            "which candidates have",
-            "which candidates mention",
-            "search resumes",
-            "search resume",
-            "find candidates with",
-            "which jobs did each candidate apply to",
-            "what jobs did each candidate apply to",
-            "which roles did each candidate apply to",
-            "what roles did each candidate apply to",
-            "which jobs has each candidate applied to",
-            "what jobs has each candidate applied to",
-            "which roles has each candidate applied to",
-            "what roles has each candidate applied to",
-            "shareable link",
-            "public application link",
-            "public link",
-            "application link",
-            "share link",
-            "sharing status",
+        compound_plan = await self._plan_compound_candidate_request(
+            db,
+            user_id=user_id,
+            content=content,
+            session_context=session_context,
+            history=history,
+            tool_results=prior_tool_results,
         )
-        if any(phrase in lower for phrase in deterministic_phrases):
-            return await self._heuristic_plan(db, user_id, content, session_context, history)
+        if compound_plan is not None:
+            return compound_plan
 
         prompt = (
             "You are Jobest Recruiter Copilot. Decide the next best action in a multi-step tool loop. "
@@ -777,7 +950,7 @@ class RecruiterAgentRuntime:
             )
             tool_name = data.get("tool_name")
             if tool_name in TOOL_MAP or tool_name is None:
-                return await self._coerce_llm_plan(
+                plan = await self._coerce_llm_plan(
                     db,
                     user_id=user_id,
                     content=content,
@@ -787,9 +960,163 @@ class RecruiterAgentRuntime:
                     arguments=data.get("arguments") if isinstance(data.get("arguments"), dict) else {},
                     answer=str(data.get("answer") or ""),
                 )
+                if (
+                    plan.get("tool_name") is None
+                    and self._is_common_recruiter_read_prompt(content)
+                    and self._looks_generic_capability_answer(str(plan.get("answer") or ""))
+                ):
+                    return await self._heuristic_plan(db, user_id, content, session_context, history)
+                return plan
         except Exception:
             pass
         return await self._heuristic_plan(db, user_id, content, session_context, history)
+
+    async def _candidate_scope(
+        self,
+        db: AsyncSession,
+        user_id: str,
+        posting_id: str | None,
+    ) -> list[Candidate]:
+        query = select(Candidate).join(JobPosting, Candidate.job_posting_id == JobPosting.id).where(JobPosting.user_id == user_id)
+        if posting_id:
+            query = query.where(Candidate.job_posting_id == posting_id)
+        return (await db.scalars(query)).all()
+
+    def _extract_candidate_name_mentions(self, text: str, candidates: list[Candidate]) -> list[Candidate]:
+        normalized_text = self._normalize_text(text)
+        matches: list[tuple[int, float, Candidate]] = []
+        seen_ids: set[str] = set()
+        for candidate in candidates:
+            name_normalized = self._normalize_text(candidate.display_name)
+            if not name_normalized:
+                continue
+            position = normalized_text.find(name_normalized)
+            score = 0.0
+            if position >= 0:
+                score = 1000.0 - position
+            else:
+                score = self._token_overlap_score(candidate.display_name, text)
+                if score < 2.0:
+                    continue
+                position = 10_000
+            if candidate.id in seen_ids:
+                continue
+            seen_ids.add(candidate.id)
+            matches.append((position, -score, candidate))
+        matches.sort(key=lambda item: (item[0], item[1], item[2].display_name.lower()))
+        return [item[2] for item in matches]
+
+    def _find_candidate_from_segment(self, segment: str | None, candidates: list[Candidate]) -> Candidate | None:
+        if not segment:
+            return None
+        mentioned = self._extract_candidate_name_mentions(segment, candidates)
+        return mentioned[0] if mentioned else None
+
+    async def _plan_compound_candidate_request(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: str,
+        content: str,
+        session_context: dict[str, Any],
+        history: list[dict[str, str]],
+        tool_results: list[dict[str, Any]],
+    ) -> dict[str, Any] | None:
+        lower = content.lower()
+        requested_compare = any(token in lower for token in ("compare", "comparison", "side by side", "versus", "vs"))
+        requested_report = "report" in lower
+        requested_email = any(
+            token in lower
+            for token in ("outreach email", "rejection email", "draft email", "write email", "contact candidate", "candidate email")
+        )
+        intent_count = sum(1 for flag in (requested_compare, requested_report, requested_email) if flag)
+        if intent_count < 2:
+            return None
+
+        posting = await self._resolve_posting(db, user_id, content, session_context, history)
+        posting_id = posting.id if posting else session_context.get("job_posting_id")
+        candidates = await self._candidate_scope(db, user_id, posting_id)
+        if not candidates:
+            return None
+
+        mentioned_candidates = self._extract_candidate_name_mentions(content, candidates)
+        report_segment_match = re.search(r"(?i)(?:full\s+)?candidate\s+report\s+for\s+([^,.]+)", content)
+        report_candidate = self._find_candidate_from_segment(report_segment_match.group(1) if report_segment_match else None, candidates)
+        email_segment_match = re.search(r"(?i)(?:draft|write|generate)\s+(?:an?\s+)?(?:outreach|rejection)?\s*email\s+for\s+([^,.]+)", content)
+        email_candidate = self._find_candidate_from_segment(email_segment_match.group(1) if email_segment_match else None, candidates)
+
+        if report_candidate is None and mentioned_candidates:
+            report_candidate = mentioned_candidates[0]
+        if email_candidate is None:
+            email_candidate = report_candidate or (mentioned_candidates[0] if mentioned_candidates else None)
+
+        completed_compare = any(row.get("tool_name") == "compare_candidates" for row in tool_results)
+        completed_report_ids = {
+            str((row.get("result") or {}).get("candidate_id") or (row.get("arguments") or {}).get("candidate_id") or "")
+            for row in tool_results
+            if row.get("tool_name") == "get_candidate_report"
+        }
+        completed_email_ids = {
+            str((row.get("result") or {}).get("candidate_id") or (row.get("arguments") or {}).get("candidate_id") or "")
+            for row in tool_results
+            if row.get("tool_name") == "generate_outreach_email"
+        }
+
+        if requested_compare and not completed_compare:
+            compare_candidates = mentioned_candidates[:2]
+            if len(compare_candidates) >= 2:
+                return {
+                    "tool_name": "compare_candidates",
+                    "arguments": {"candidate_ids": [candidate.id for candidate in compare_candidates], "job_posting_id": posting_id},
+                    "answer": "",
+                    "planner": "compound",
+                }
+            return {
+                "tool_name": None,
+                "arguments": {},
+                "answer": "Name at least two candidates to compare, or keep the job context selected so I can compare the top candidates in that role.",
+                "planner": "compound",
+            }
+
+        if requested_report and report_candidate and report_candidate.id not in completed_report_ids:
+            return {
+                "tool_name": "get_candidate_report",
+                "arguments": {"candidate_id": report_candidate.id},
+                "answer": "",
+                "planner": "compound",
+            }
+
+        if requested_email and email_candidate and email_candidate.id not in completed_email_ids:
+            email_type = "rejection" if "reject" in lower or "rejection" in lower else "outreach"
+            return {
+                "tool_name": "generate_outreach_email",
+                "arguments": {"candidate_id": email_candidate.id, "email_type": email_type},
+                "answer": "",
+                "planner": "compound",
+            }
+
+        if requested_report and report_candidate is None:
+            return {
+                "tool_name": None,
+                "arguments": {},
+                "answer": "Name which candidate you want the report for, and I will fetch it.",
+                "planner": "compound",
+            }
+
+        if requested_email and email_candidate is None:
+            return {
+                "tool_name": None,
+                "arguments": {},
+                "answer": "Name which candidate you want the email for, and I will draft it.",
+                "planner": "compound",
+            }
+
+        return {
+            "tool_name": None,
+            "arguments": {},
+            "answer": "",
+            "planner": "compound",
+        }
 
     def _normalize_text(self, value: str) -> str:
         return re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
@@ -807,6 +1134,109 @@ class RecruiterAgentRuntime:
         if not overlap:
             return 0.0
         return len(overlap) / max(len(source_tokens), 1)
+
+    def _is_scoped_candidate_list_prompt(self, text: str) -> bool:
+        lower = text.lower()
+        return (
+            any(
+                token in lower
+                for token in (
+                    "name all the candidates",
+                    "name all candidates",
+                    "name each candidate",
+                    "name each one",
+                    "list all candidates",
+                    "show all candidates",
+                    "all the candidates",
+                    "all candidates",
+                    "applicants",
+                )
+            )
+            or (
+                any(token in lower for token in ("how many candidates", "how many current candidates", "current candidates"))
+                and any(token in lower for token in ("here", "this posting", "this job", "this role", "in this posting"))
+            )
+        )
+
+    def _is_workspace_candidate_count_prompt(self, text: str) -> bool:
+        lower = text.lower()
+        return any(
+            token in lower
+            for token in (
+                "most candidates",
+                "least candidates",
+                "fewest candidates",
+                "candidate count",
+                "resume count",
+                "how many resumes",
+                "how many cvs",
+                "how many cv",
+                "how many current candidates",
+                "current candidates",
+                "resumes did we get",
+            )
+        ) and not self._is_scoped_candidate_list_prompt(text)
+
+    def _is_common_recruiter_read_prompt(self, text: str) -> bool:
+        lower = text.lower()
+        return any(
+            token in lower
+            for token in (
+                "list all job postings",
+                "list job postings",
+                "list jobs",
+                "show jobs",
+                "show all jobs",
+                "job postings in this workspace",
+                "summarize this workspace",
+                "workspace summary",
+                "which candidates have",
+                "which candidates mention",
+                "search resumes",
+                "search resume",
+                "find candidates with",
+                "summarize why",
+                "why not recommended",
+                "not recommended",
+                "shareable link",
+                "public application link",
+                "public link",
+                "application link",
+                "share link",
+                "sharing status",
+                "how many candidates",
+                "how many current candidates",
+                "candidate count",
+                "resume count",
+                "how many resumes",
+                "how many cvs",
+                "how many cv",
+                "resumes did we get",
+                "name all the candidates",
+                "name all candidates",
+                "name each candidate",
+                "name each one",
+                "list all candidates",
+                "show all candidates",
+                "all the candidates",
+                "applicants",
+            )
+        )
+
+    def _looks_generic_capability_answer(self, answer: str) -> bool:
+        normalized = re.sub(r"\s+", " ", answer.lower()).strip()
+        if not normalized:
+            return True
+        return any(
+            snippet in normalized
+            for snippet in (
+                "i can search resumes",
+                "i can inspect jobs and queues",
+                "i can access recruiter-safe tools",
+                "i need more detail before i can act",
+                "name a posting in the message or select it in context",
+            )
+        )
 
     async def _resolve_posting(
         self,
@@ -873,7 +1303,7 @@ class RecruiterAgentRuntime:
         for candidate in candidates:
             for text in search_texts:
                 score = self._token_overlap_score(candidate.display_name, text)
-                if score < 2.0:
+                if score < 2.5:
                     continue
                 if best_match is None or score > best_match[0]:
                     best_match = (score, candidate)
@@ -1006,7 +1436,7 @@ class RecruiterAgentRuntime:
         text = content.strip()
         lower = text.lower()
         posting = await self._resolve_posting(db, user_id, content, session_context, history)
-        posting_id = posting.id if posting else None
+        posting_id = posting.id if posting else session_context.get("job_posting_id")
         candidate = await self._resolve_candidate(db, user_id, content, session_context, posting_id, history)
         candidate_id = candidate.id if candidate else session_context.get("candidate_id")
 
@@ -1072,14 +1502,57 @@ class RecruiterAgentRuntime:
             return {"tool_name": "list_job_postings", "arguments": {"classification_hint": "cs_related"}, "answer": "", "planner": "fallback"}
         if any(token in lower for token in ("read the database", "job coverage", "workspace summary", "summarize workspace")):
             return {"tool_name": "get_workspace_summary", "arguments": {}, "answer": "", "planner": "fallback"}
+        if self._is_scoped_candidate_list_prompt(text):
+            if posting_id:
+                return {"tool_name": "list_candidates", "arguments": {"job_posting_id": posting_id}, "answer": "", "planner": "fallback"}
+            return {"tool_name": "list_candidates", "arguments": {}, "answer": "", "planner": "fallback"}
+        if any(
+            token in lower
+            for token in (
+                "how many current candidates",
+                "how many candidates are there",
+                "how many candidates",
+                "current candidates",
+                "candidate count",
+                "resume count",
+                "how many resumes",
+                "how many cvs",
+                "how many cv",
+                "resumes did we get",
+            )
+        ):
+            return {"tool_name": "get_workspace_summary", "arguments": {}, "answer": "", "planner": "fallback"}
         if "which candidates have major risk flags" in lower:
             return {"tool_name": "find_risk_flags", "arguments": {"job_posting_id": posting_id} if posting_id else {}, "answer": "", "planner": "fallback"}
         if "hiring context" in lower and posting_id:
             return {"tool_name": "get_job_posting", "arguments": {"job_posting_id": posting_id}, "answer": "", "planner": "fallback"}
         if any(token in lower for token in ("show me alex wong", "show alex wong", "show me keyaan minhas", "show me priya nair")) and candidate_id:
             return {"tool_name": "get_candidate_detail", "arguments": {"candidate_id": candidate_id}, "answer": "", "planner": "fallback"}
+        if any(token in lower for token in ("summarize why", "not recommended", "why not recommended")) and candidate_id:
+            return {"tool_name": "get_candidate_detail", "arguments": {"candidate_id": candidate_id}, "answer": "", "planner": "fallback"}
+        if any(token in lower for token in ("summarize why", "not recommended", "why not recommended")) and not candidate_id:
+            candidate_name_match = re.search(
+                r"(?i)(?:summarize why|explain why|why is|why was|why)\s+(.+?)\s+(?:is\s+)?(?:not\s+)?recommended",
+                text,
+            )
+            candidate_label = candidate_name_match.group(1).strip(" .?!") if candidate_name_match else "that candidate"
+            return {
+                "tool_name": None,
+                "arguments": {},
+                "answer": f"I couldn't find {candidate_label} in this workspace.",
+                "planner": "fallback",
+            }
         if (
-            ("most candidates" in lower or "least candidates" in lower or "fewest candidates" in lower or "candidate count" in lower)
+            (
+                "most candidates" in lower
+                or "least candidates" in lower
+                or "fewest candidates" in lower
+                or "candidate count" in lower
+                or "how many candidates" in lower
+                or "how many current candidates" in lower
+                or "current candidates" in lower
+            )
+            and not self._is_scoped_candidate_list_prompt(text)
             and "job" in lower
         ):
             return {"tool_name": "get_workspace_summary", "arguments": {}, "answer": "", "planner": "fallback"}
@@ -1778,8 +2251,16 @@ class RecruiterAgentRuntime:
         )
         if output is None:
             raise ValueError("Completed candidate report not found in this workspace.")
+        candidate = await db.scalar(
+            select(Candidate)
+            .join(JobPosting, Candidate.job_posting_id == JobPosting.id)
+            .where(Candidate.id == candidate_id, JobPosting.user_id == user_id)
+            .options(selectinload(Candidate.job_posting))
+        )
         return {
             "candidate_id": candidate_id,
+            "candidate_name": candidate.display_name if candidate else "",
+            "job_posting_title": candidate.job_posting.title if candidate and candidate.job_posting else "",
             "analysis_run_id": output.analysis_run_id,
             "score": output.score_json,
             "report": output.report_json,
@@ -2271,12 +2752,19 @@ class RecruiterAgentRuntime:
         }
 
         result = await self.llm.call_agent("outreach_email_generator", system_prompt, payload, temperature=0.3)
+        subject = str(result.get("email_subject") or "Regarding your application").strip()
+        body = str(result.get("email_body") or "").strip()
+        if not subject or subject.lower() == "regarding your application":
+            subject = f"{posting.title} opportunity at Jobest"
+        if body:
+            body = re.sub(r"(?im)^hi candidate\b", f"Hi {candidate.display_name}", body)
+            body = re.sub(r"(?im)^dear candidate\b", f"Dear {candidate.display_name}", body)
         return {
             "candidate_id": candidate_id,
             "candidate_name": candidate.display_name,
             "email_type": email_type,
-            "email_subject": str(result.get("email_subject") or "Regarding your application"),
-            "email_body": str(result.get("email_body") or ""),
+            "email_subject": subject,
+            "email_body": body,
         }
 
     async def _compare_candidates(self, db: AsyncSession, user_id: str, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -2290,7 +2778,7 @@ class RecruiterAgentRuntime:
             select(Candidate)
             .join(JobPosting, Candidate.job_posting_id == JobPosting.id)
             .where(Candidate.id.in_(candidate_ids), JobPosting.user_id == user_id)
-            .options(selectinload(Candidate.triage), selectinload(Candidate.final_output))
+            .options(selectinload(Candidate.triage), selectinload(Candidate.final_output), selectinload(Candidate.job_posting))
         )
         candidates = (await db.scalars(query)).all()
         if not candidates:
@@ -2319,6 +2807,7 @@ class RecruiterAgentRuntime:
             candidate_data.append({
                 "id": c.id,
                 "name": c.display_name,
+                "role": c.job_posting.title if c.job_posting else posting.title,
                 "triage_score": c.triage.triage_score if c.triage else None,
                 "triage_summary": c.triage.triage_summary if c.triage else None,
                 "final_score": final_score,
@@ -2340,11 +2829,71 @@ class RecruiterAgentRuntime:
         }
 
         result = await self.llm.call_agent("candidate_comparator", system_prompt, payload, temperature=0.2)
+        by_name = {self._normalize_text(row["name"]): row for row in candidate_data}
+
+        comparator_rows = []
+        for row in result.get("candidates") or []:
+            normalized_name = self._normalize_text(str(row.get("name") or ""))
+            candidate_row = by_name.get(normalized_name)
+            if candidate_row is None:
+                continue
+            comparator_rows.append(
+                {
+                    "name": candidate_row["name"],
+                    "role": row.get("role") or candidate_row["role"],
+                    "triage_score": row.get("triage_score", candidate_row["triage_score"]),
+                    "score": row.get("score", candidate_row["final_score"] if candidate_row["final_score"] is not None else candidate_row["triage_score"]),
+                    "verdict": row.get("verdict", candidate_row["recommendation"] or "Pending"),
+                }
+            )
+
+        if len(comparator_rows) != len(candidate_data):
+            comparator_rows = [
+                {
+                    "name": row["name"],
+                    "role": row["role"],
+                    "triage_score": row["triage_score"],
+                    "score": row["final_score"] if row["final_score"] is not None else row["triage_score"],
+                    "verdict": row["recommendation"] or "Pending",
+                }
+                for row in candidate_data
+            ]
+
+        ranked_candidates = sorted(
+            candidate_data,
+            key=lambda row: (
+                float(row["final_score"]) if row["final_score"] is not None else float(row["triage_score"] or 0.0),
+                float(row["triage_score"] or 0.0),
+            ),
+            reverse=True,
+        )
+        fallback_recommended = ranked_candidates[0]["name"] if ranked_candidates else ""
+        comparison_text = str(result.get("comparison") or "").strip()
+        if not comparison_text or any(self._normalize_text(row["name"]) not in self._normalize_text(comparison_text) for row in ranked_candidates[:2]):
+            if len(ranked_candidates) >= 2:
+                top = ranked_candidates[0]
+                runner_up = ranked_candidates[1]
+                comparison_text = (
+                    f"{top['name']} leads on overall score with "
+                    f"{top['final_score'] if top['final_score'] is not None else top['triage_score']}, "
+                    f"ahead of {runner_up['name']} at "
+                    f"{runner_up['final_score'] if runner_up['final_score'] is not None else runner_up['triage_score']}. "
+                    f"Both candidates are mapped to `{posting.title}`, and the recommendation follows the stronger available evidence."
+                )
+            elif ranked_candidates:
+                comparison_text = (
+                    f"{ranked_candidates[0]['name']} is the only candidate returned for comparison in `{posting.title}`."
+                )
+
+        recommended_name = str(result.get("recommended") or "").strip()
+        if self._normalize_text(recommended_name) not in by_name:
+            recommended_name = fallback_recommended
+
         return {
             "job_title": posting.title,
-            "candidates": result.get("candidates") or [],
-            "comparison": str(result.get("comparison") or ""),
-            "recommended": str(result.get("recommended") or ""),
+            "candidates": comparator_rows,
+            "comparison": comparison_text,
+            "recommended": recommended_name,
         }
 
     async def _generate_targeted_interview_questions(self, db: AsyncSession, user_id: str, arguments: dict[str, Any]) -> dict[str, Any]:

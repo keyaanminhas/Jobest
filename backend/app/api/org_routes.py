@@ -745,7 +745,7 @@ def _provider_from_settings(settings: UserAgentSettings) -> ProviderConfig | Non
         provider=settings.provider or "chutes",
         base_url=settings.base_url or "https://llm.chutes.ai/v1",
         api_key=api_key.strip(),
-        model=settings.model or "Qwen/Qwen2.5-Coder-32B-Instruct-TEE",
+        model=settings.model or "deepseek-ai/DeepSeek-V3.2-TEE",
     )
 
 
@@ -793,7 +793,7 @@ async def _seed_keyaan_accounts_if_possible() -> None:
                 db.add(settings)
             settings.provider = "chutes"
             settings.base_url = "https://llm.chutes.ai/v1"
-            settings.model = settings.model or "Qwen/Qwen2.5-Coder-32B-Instruct-TEE"
+            settings.model = settings.model or "deepseek-ai/DeepSeek-V3.2-TEE"
             settings.encrypted_api_key = encrypted
             settings.api_key_last4 = local_key[-4:]
             settings.parallel_agents_limit = _normalize_positive_int(settings.parallel_agents_limit, min_value=1, max_value=10)
