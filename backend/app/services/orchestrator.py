@@ -67,8 +67,9 @@ def _merge_profile_links(explicit_links: dict[str, str], inferred_links: list[st
 
 
 class PipelineOrchestrator:
-    def __init__(self, llm_client: LLMClient | None = None) -> None:
+    def __init__(self, llm_client: LLMClient | None = None, provider_override=None) -> None:
         self.llm_client = llm_client or LLMClient()
+        self.provider_override = provider_override
         self.prompts_dir = Path(__file__).resolve().parents[1] / "prompts"
         self.demo_dir = Path(__file__).resolve().parents[1] / "storage" / "demo"
 
@@ -86,6 +87,17 @@ class PipelineOrchestrator:
             "raw_output": raw_output,
         }
 
+    @staticmethod
+    def _cached_model(schema_cls, raw_value: Any, fallback):
+        if isinstance(raw_value, schema_cls):
+            return raw_value
+        if raw_value:
+            try:
+                return schema_cls.model_validate(raw_value)
+            except Exception:
+                pass
+        return fallback
+
     async def _run_agent(
         self,
         *,
@@ -100,7 +112,13 @@ class PipelineOrchestrator:
     ):
         prompt = self._prompt(agent_name)
         try:
-            data = await self.llm_client.call_agent(agent_name, prompt, payload, temperature=temperature)
+            data = await self.llm_client.call_agent(
+                agent_name,
+                prompt,
+                payload,
+                temperature=temperature,
+                provider_override=self.provider_override,
+            )
             meta = self.llm_client.get_last_call_meta(agent_name)
             model = schema_cls.model_validate(data)
             summary = f"source={meta.get('source','unknown')} provider={meta.get('provider','unknown')} repaired={meta.get('repaired', False)}"
@@ -170,14 +188,37 @@ class PipelineOrchestrator:
         self,
         run_data: dict,
         progress_callback: Callable[[list[dict[str, Any]], list[dict[str, Any]]], Awaitable[None]] | None = None,
+        focused_stage: str | None = None,
+        stage_mode: str = "prerequisite_aware",
     ) -> dict:
         pipeline: list[dict[str, Any]] = []
         candidates_out: list[dict[str, Any]] = []
+
+        def focused_result(stage: str) -> dict:
+            return {
+                "run_id": run_data["id"],
+                "status": "completed",
+                "pipeline": pipeline,
+                "top_candidates": [],
+                "report": f"Focused stage refresh completed: {stage}",
+                "report_data": {"summary": f"Focused stage refresh completed: {stage}"},
+                "candidates": candidates_out,
+                "focused_stage": stage,
+            }
 
         async def emit_progress() -> None:
             if progress_callback is None:
                 return
             await progress_callback(copy.deepcopy(pipeline), copy.deepcopy(candidates_out))
+
+        if focused_stage and stage_mode == "isolated":
+            return await self._run_isolated_stage(
+                run_data=run_data,
+                focused_stage=focused_stage,
+                pipeline=pipeline,
+                candidates_out=candidates_out,
+                emit_progress=emit_progress,
+            )
 
         rubric = await self._run_agent(
             agent_name="jd_deconstruction",
@@ -191,6 +232,8 @@ class PipelineOrchestrator:
             progress_callback=progress_callback,
             candidates_out=candidates_out,
         )
+        if focused_stage == "jd_deconstruction":
+            return focused_result(focused_stage)
 
         context = await self._run_agent(
             agent_name="hiring_context",
@@ -204,6 +247,8 @@ class PipelineOrchestrator:
             progress_callback=progress_callback,
             candidates_out=candidates_out,
         )
+        if focused_stage == "hiring_context":
+            return focused_result(focused_stage)
 
         for candidate in run_data.get("candidates", []):
             candidate_name = candidate.get("name", "Unknown Candidate")
@@ -223,6 +268,9 @@ class PipelineOrchestrator:
                     progress_callback=progress_callback,
                     candidates_out=candidates_out,
                 )
+                if focused_stage == "resume_parser":
+                    candidates_out.append({"candidate": candidate, "status": "completed", "parsed_profile": parsed.model_dump()})
+                    return focused_result(focused_stage)
 
                 evidence = await self._run_agent(
                     agent_name="evidence_extractor",
@@ -237,6 +285,16 @@ class PipelineOrchestrator:
                     progress_callback=progress_callback,
                     candidates_out=candidates_out,
                 )
+                if focused_stage == "evidence_extractor":
+                    candidates_out.append(
+                        {
+                            "candidate": candidate,
+                            "status": "completed",
+                            "parsed_profile": parsed.model_dump(),
+                            "evidence": evidence.model_dump(),
+                        }
+                    )
+                    return focused_result(focused_stage)
 
                 effective_links = _merge_profile_links(links, parsed.professional_links)
 
@@ -252,6 +310,17 @@ class PipelineOrchestrator:
                     progress_callback=progress_callback,
                     candidates_out=candidates_out,
                 )
+                if focused_stage == "transferable_skills":
+                    candidates_out.append(
+                        {
+                            "candidate": candidate,
+                            "status": "completed",
+                            "parsed_profile": parsed.model_dump(),
+                            "evidence": evidence.model_dump(),
+                            "transferable_skills": transfer.model_dump(),
+                        }
+                    )
+                    return focused_result(focused_stage)
 
                 fetched_profiles = await fetch_professional_profiles(effective_links)
                 visited_links = fetched_profiles.get("visited_links", [])
@@ -269,6 +338,18 @@ class PipelineOrchestrator:
                     )
                 )
                 await emit_progress()
+                if focused_stage == "professional_link_fetcher":
+                    candidates_out.append(
+                        {
+                            "candidate": candidate,
+                            "status": "completed",
+                            "parsed_profile": parsed.model_dump(),
+                            "evidence": evidence.model_dump(),
+                            "transferable_skills": transfer.model_dump(),
+                            "fetched_profiles": fetched_profiles,
+                        }
+                    )
+                    return focused_result(focused_stage)
 
                 footprint_stage_name = f"Professional Footprint Agent ({candidate_name})"
                 footprint = await self._run_agent(
@@ -298,6 +379,18 @@ class PipelineOrchestrator:
                         stage["raw_output"] = footprint.model_dump()
                         break
                 await emit_progress()
+                if focused_stage == "professional_footprint":
+                    candidates_out.append(
+                        {
+                            "candidate": candidate,
+                            "status": "completed",
+                            "parsed_profile": parsed.model_dump(),
+                            "evidence": evidence.model_dump(),
+                            "transferable_skills": transfer.model_dump(),
+                            "professional_footprint": footprint.model_dump(),
+                        }
+                    )
+                    return focused_result(focused_stage)
 
                 risk = await self._run_agent(
                     agent_name="risk_auditor",
@@ -313,6 +406,19 @@ class PipelineOrchestrator:
                     progress_callback=progress_callback,
                     candidates_out=candidates_out,
                 )
+                if focused_stage == "risk_auditor":
+                    candidates_out.append(
+                        {
+                            "candidate": candidate,
+                            "status": "completed",
+                            "parsed_profile": parsed.model_dump(),
+                            "evidence": evidence.model_dump(),
+                            "transferable_skills": transfer.model_dump(),
+                            "professional_footprint": footprint.model_dump(),
+                            "risk_audit": risk.model_dump(),
+                        }
+                    )
+                    return focused_result(focused_stage)
 
                 score = calculate_score(
                     rubric=rubric,
@@ -331,6 +437,15 @@ class PipelineOrchestrator:
                     )
                 )
                 await emit_progress()
+                if focused_stage == "score_aggregation":
+                    candidates_out.append(
+                        {
+                            "candidate": candidate,
+                            "status": "completed",
+                            "score": score.model_dump(),
+                        }
+                    )
+                    return focused_result(focused_stage)
 
                 strengths = [item.skill for item in evidence.evidence_items][:5]
                 gaps = [item.requirement for item in transfer.missing_requirements][:5]
@@ -350,6 +465,16 @@ class PipelineOrchestrator:
                     progress_callback=progress_callback,
                     candidates_out=candidates_out,
                 )
+                if focused_stage == "panel_review":
+                    candidates_out.append(
+                        {
+                            "candidate": candidate,
+                            "status": "completed",
+                            "score": score.model_dump(),
+                            "panel_review": panel.model_dump(),
+                        }
+                    )
+                    return focused_result(focused_stage)
 
                 interview = await self._run_agent(
                     agent_name="interview_pack",
@@ -365,6 +490,17 @@ class PipelineOrchestrator:
                     progress_callback=progress_callback,
                     candidates_out=candidates_out,
                 )
+                if focused_stage == "interview_pack":
+                    candidates_out.append(
+                        {
+                            "candidate": candidate,
+                            "status": "completed",
+                            "score": score.model_dump(),
+                            "panel_review": panel.model_dump(),
+                            "interview_pack": interview.model_dump(),
+                        }
+                    )
+                    return focused_result(focused_stage)
 
                 candidates_out.append(
                     {
@@ -454,4 +590,198 @@ class PipelineOrchestrator:
             "report": report_text,
             "report_data": report_model.model_dump(),
             "candidates": ranked,
+        }
+
+    async def _run_isolated_stage(
+        self,
+        *,
+        run_data: dict,
+        focused_stage: str,
+        pipeline: list[dict[str, Any]],
+        candidates_out: list[dict[str, Any]],
+        emit_progress: Callable[[], Awaitable[None]],
+    ) -> dict:
+        candidate = (run_data.get("candidates") or [{}])[0]
+        candidate_name = candidate.get("name", "Unknown Candidate")
+        links = candidate.get("professional_links") or {}
+        cached = candidate.get("cached_stage_outputs") or {}
+
+        pipeline.append(
+            self._stage_entry(
+                "Isolated Stage Warning",
+                "warning",
+                f"Running isolated `{focused_stage}`. Upstream stages were not rerun; cached artifacts and safe defaults will be used where available.",
+                {"focused_stage": focused_stage, "cached_keys": sorted(cached.keys())},
+            )
+        )
+        await emit_progress()
+
+        rubric = self._cached_model(
+            JobRubricOutput,
+            cached.get("rubric"),
+            JobRubricOutput(
+                role_title=run_data.get("title", ""),
+                must_have_skills=run_data.get("must_have_skills", []) or [],
+                nice_to_have_skills=run_data.get("nice_to_have_skills", []) or [],
+            ),
+        )
+        context = self._cached_model(
+            HiringContextOutput,
+            cached.get("hiring_context"),
+            HiringContextOutput(
+                company_priorities=[str(run_data.get("company_priority") or "").strip()] if str(run_data.get("company_priority") or "").strip() else [],
+                context_fit_keywords=run_data.get("must_have_skills", []) or [],
+            ),
+        )
+        parsed = self._cached_model(
+            ParsedResumeOutput,
+            cached.get("parsed_profile"),
+            ParsedResumeOutput(candidate_name=candidate_name, professional_links=list(links.values())),
+        )
+        evidence = self._cached_model(EvidenceOutput, cached.get("evidence"), EvidenceOutput())
+        transfer = self._cached_model(TransferableSkillsOutput, cached.get("transferable_skills"), TransferableSkillsOutput())
+        fetched_profiles = cached.get("fetched_profiles") if isinstance(cached.get("fetched_profiles"), dict) else {
+            "visited_links": [],
+            "github_repos": [],
+            "fetch_failures": [],
+        }
+        effective_links = _merge_profile_links(links, parsed.professional_links)
+
+        if focused_stage == "professional_link_fetcher":
+            fetched_profiles = await fetch_professional_profiles(effective_links)
+            pipeline.append(
+                self._stage_entry(
+                    f"Professional Link Fetcher Agent ({candidate_name})",
+                    "completed",
+                    f"Visited {len(fetched_profiles.get('visited_links', []))} professional links, failures={len(fetched_profiles.get('fetch_failures', []))}",
+                    fetched_profiles,
+                )
+            )
+            candidates_out.append({"candidate": candidate, "status": "completed", "fetched_profiles": fetched_profiles})
+            await emit_progress()
+            return {
+                "run_id": run_data["id"],
+                "status": "completed",
+                "pipeline": pipeline,
+                "top_candidates": [],
+                "report": f"Isolated stage refresh completed: {focused_stage}",
+                "report_data": {"summary": f"Isolated stage refresh completed: {focused_stage}"},
+                "candidates": candidates_out,
+                "focused_stage": focused_stage,
+            }
+
+        if focused_stage == "professional_footprint":
+            if not fetched_profiles.get("visited_links") and effective_links:
+                fetched_profiles = await fetch_professional_profiles(effective_links)
+                pipeline.append(
+                    self._stage_entry(
+                        f"Professional Link Fetcher Agent ({candidate_name})",
+                        "completed",
+                        "Fetched links for isolated professional footprint refresh.",
+                        fetched_profiles,
+                    )
+                )
+            footprint = await self._run_agent(
+                agent_name="professional_footprint",
+                stage_name=f"Professional Footprint Agent ({candidate_name})",
+                schema_cls=ProfessionalFootprintOutput,
+                payload={
+                    "profile_links": effective_links,
+                    "fetched_profiles": fetched_profiles,
+                    "candidate_evidence": evidence.model_dump(),
+                    "job_rubric": rubric.model_dump(),
+                },
+                pipeline=pipeline,
+                candidates_out=candidates_out,
+            )
+            footprint = footprint.model_copy(
+                update={
+                    "visited_links": fetched_profiles.get("visited_links", []),
+                    "github_repos": fetched_profiles.get("github_repos", []),
+                    "fetch_failures": fetched_profiles.get("fetch_failures", []),
+                }
+            )
+            candidates_out.append(
+                {
+                    "candidate": candidate,
+                    "status": "completed",
+                    "professional_footprint": footprint.model_dump(),
+                }
+            )
+            await emit_progress()
+            return {
+                "run_id": run_data["id"],
+                "status": "completed",
+                "pipeline": pipeline,
+                "top_candidates": [],
+                "report": f"Isolated stage refresh completed: {focused_stage}",
+                "report_data": {"summary": f"Isolated stage refresh completed: {focused_stage}"},
+                "candidates": candidates_out,
+                "focused_stage": focused_stage,
+            }
+
+        footprint = self._cached_model(ProfessionalFootprintOutput, cached.get("professional_footprint"), ProfessionalFootprintOutput())
+        risk = self._cached_model(RiskAuditOutput, cached.get("risk_audit"), RiskAuditOutput())
+        score = cached.get("score")
+        score_model = CandidateScore.model_validate(score) if score else calculate_score(
+            rubric=rubric,
+            context=context,
+            evidence=evidence,
+            transferable=transfer,
+            footprint=footprint,
+            risk=risk,
+        )
+
+        if focused_stage == "risk_auditor":
+            risk = await self._run_agent(
+                agent_name="risk_auditor",
+                stage_name=f"Risk & Contradiction Agent ({candidate_name})",
+                schema_cls=RiskAuditOutput,
+                payload={
+                    "resume_evidence": evidence.model_dump(),
+                    "transferable_skills": transfer.model_dump(),
+                    "professional_footprint": footprint.model_dump(),
+                    "job_rubric": rubric.model_dump(),
+                },
+                pipeline=pipeline,
+                candidates_out=candidates_out,
+            )
+            candidates_out.append({"candidate": candidate, "status": "completed", "risk_audit": risk.model_dump()})
+            await emit_progress()
+        elif focused_stage == "panel_review":
+            panel = await self._run_agent(
+                agent_name="panel_review",
+                stage_name=f"Hiring Panel Review Agent ({candidate_name})",
+                schema_cls=PanelReviewOutput,
+                payload={
+                    "candidate_score": score_model.model_dump(),
+                    "evidence": evidence.model_dump(),
+                    "risks": risk.model_dump(),
+                    "job_rubric": rubric.model_dump(),
+                    "hiring_context": context.model_dump(),
+                },
+                pipeline=pipeline,
+                candidates_out=candidates_out,
+            )
+            candidates_out.append(
+                {
+                    "candidate": candidate,
+                    "status": "completed",
+                    "score": score_model.model_dump(),
+                    "panel_review": panel.model_dump(),
+                }
+            )
+            await emit_progress()
+        else:
+            raise ValueError(f"Isolated mode is not supported for '{focused_stage}'.")
+
+        return {
+            "run_id": run_data["id"],
+            "status": "completed",
+            "pipeline": pipeline,
+            "top_candidates": [],
+            "report": f"Isolated stage refresh completed: {focused_stage}",
+            "report_data": {"summary": f"Isolated stage refresh completed: {focused_stage}"},
+            "candidates": candidates_out,
+            "focused_stage": focused_stage,
         }

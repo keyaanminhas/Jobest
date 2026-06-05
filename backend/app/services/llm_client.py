@@ -55,12 +55,14 @@ class LLMClient:
         system_prompt: str,
         user_payload: dict,
         temperature: float = 0.2,
+        provider_override: ProviderConfig | None = None,
     ) -> dict:
         result, meta = await self.call_agent_with_meta(
             agent_name=agent_name,
             system_prompt=system_prompt,
             user_payload=user_payload,
             temperature=temperature,
+            provider_override=provider_override,
         )
         self._last_meta_by_agent[agent_name] = meta
         return result
@@ -71,9 +73,10 @@ class LLMClient:
         system_prompt: str,
         user_payload: dict,
         temperature: float = 0.2,
+        provider_override: ProviderConfig | None = None,
     ) -> tuple[dict, dict[str, Any]]:
         mode = self.router.llm_mode
-        primary = self._select_provider_for_agent(agent_name)
+        primary = provider_override or self._select_provider_for_agent(agent_name)
         cache_key = self.cache.make_cache_key(
             agent_name=agent_name,
             model=primary.model,
@@ -217,9 +220,10 @@ class LLMClient:
         }
 
         last_error: Exception | None = None
+        timeout_seconds = float(os.getenv("LLM_REQUEST_TIMEOUT_SECONDS", "300"))
         for attempt in range(3):
             try:
-                async with httpx.AsyncClient(timeout=120.0) as client:
+                async with httpx.AsyncClient(timeout=timeout_seconds) as client:
                     resp = await client.post(url, headers=headers, json=body)
 
                 if resp.status_code in {408, 409, 429, 500, 502, 503, 504} and attempt < 2:

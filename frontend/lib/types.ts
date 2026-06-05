@@ -230,6 +230,8 @@ export type JobPostingRecord = {
   hiring_context: string;
   company_priority?: string | null;
   status: string;
+  public_application_url: string;
+  public_applications_enabled: boolean;
   must_have_skills: string[];
   nice_to_have_skills: string[];
   created_at: string;
@@ -262,6 +264,11 @@ export type CandidateDetail = {
   job_posting_id: string;
   job_posting_title: string;
   display_name: string;
+  first_name?: string | null;
+  last_name?: string | null;
+  email?: string | null;
+  phone_number?: string | null;
+  external_id_text?: string | null;
   resume_text: string;
   upload_status: string;
   analysis_status: string;
@@ -402,4 +409,116 @@ export type NotificationItem = {
 export type NotificationListResponse = {
   items: NotificationItem[];
   unread_count: number;
+};
+
+export type AgentSettings = {
+  provider: string;
+  base_url: string;
+  model: string;
+  api_key_label?: string | null;
+  parallel_agents_limit: number;
+  retry_attempts: number;
+  retry_delay_seconds: number;
+};
+
+export type UpdateAgentSettingsPayload = {
+  provider: string;
+  base_url: string;
+  model: string;
+  api_key?: string;
+  parallel_agents_limit: number;
+  retry_attempts: number;
+  retry_delay_seconds: number;
+};
+
+export type AgentModelsResponse = {
+  models: string[];
+  fetch_status: string;
+  fetch_error?: string | null;
+};
+
+export type RunningAgent = {
+  analysis_run_id: string;
+  candidate_id: string;
+  candidate_name: string;
+  job_posting_id: string;
+  job_posting_title?: string | null;
+  status: string;
+  current_stage?: string | null;
+  stage_summary?: string | null;
+  progress_percent: number;
+  provider_used?: string | null;
+  model_used?: string | null;
+  key_label_used?: string | null;
+  worker_slot_index?: number | null;
+  attempt_count: number;
+  max_attempts: number;
+};
+
+export type AgentsStatus = {
+  active_agents: number;
+  running: RunningAgent[];
+  queued: RunningAgent[];
+};
+
+export type AgentChatMessage = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  metadata: Record<string, unknown>;
+  created_at: string;
+};
+
+export type AgentToolTrace = {
+  id: string;
+  tool_name: string;
+  risk_class: string;
+  status: string;
+  arguments: Record<string, unknown>;
+  result: Record<string, unknown>;
+  created_at: string;
+};
+
+export type AgentPendingAction = {
+  id: string;
+  tool_name: string;
+  arguments: Record<string, unknown>;
+  summary: string;
+  status: string;
+  expires_at: string;
+};
+
+export type AgentChatSessionSummary = {
+  id: string;
+  title: string;
+  job_posting_id?: string | null;
+  candidate_id?: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AgentChatSession = AgentChatSessionSummary & {
+  messages: AgentChatMessage[];
+  traces: AgentToolTrace[];
+  pending_actions: AgentPendingAction[];
+};
+
+export type AgentChatTurn = {
+  session: AgentChatSession;
+  assistant_message: AgentChatMessage;
+  pending_action?: AgentPendingAction | null;
+};
+
+export type PublicJobPosting = {
+  title: string;
+  summary: string;
+  company_priority?: string | null;
+  applications_open: boolean;
+  closed_message?: string | null;
+};
+
+export type PublicApplyResponse = {
+  message: string;
+  applicant_name: string;
+  job_title: string;
 };

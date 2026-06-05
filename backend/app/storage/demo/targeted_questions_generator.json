@@ -1,0 +1,14 @@
+{
+  "questions": [
+    {
+      "claim": "Docker hands-on depth",
+      "question": "Can you walk us through the most complex Docker multi-stage build or orchestration setup you have configured yourself?",
+      "intent": "Verify if they have set it up from scratch or just used existing templates."
+    },
+    {
+      "claim": "System design leadership",
+      "question": "Describe a system architecture decision you made that you later had to refactor due to scaling challenges. What were the trade-offs?",
+      "intent": "Evaluate architecture maturity and ability to analyze performance bottlenecks."
+    }
+  ]
+}

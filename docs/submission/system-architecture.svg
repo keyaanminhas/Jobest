@@ -1,0 +1,432 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1200" viewBox="0 0 1920 1200">
+  <defs>
+    <!-- Background Gradient -->
+    <linearGradient id="bg-grad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0f172a"/>
+      <stop offset="50%" stop-color="#090d16"/>
+      <stop offset="100%" stop-color="#020617"/>
+    </linearGradient>
+
+    <!-- Component Box Gradients -->
+    <linearGradient id="frontend-grad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0ea5e9" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#0284c7" stop-opacity="0.05"/>
+    </linearGradient>
+    <linearGradient id="backend-grad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#8b5cf6" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#6d28d9" stop-opacity="0.05"/>
+    </linearGradient>
+    <linearGradient id="storage-grad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#10b981" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#047857" stop-opacity="0.05"/>
+    </linearGradient>
+    <linearGradient id="agent-grad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ec4899" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#be185d" stop-opacity="0.05"/>
+    </linearGradient>
+    <linearGradient id="llm-grad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#64748b" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#475569" stop-opacity="0.05"/>
+    </linearGradient>
+
+    <!-- Glow/Drop Shadows -->
+    <filter id="glow-frontend" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#0ea5e9" flood-opacity="0.3"/>
+    </filter>
+    <filter id="glow-backend" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#8b5cf6" flood-opacity="0.3"/>
+    </filter>
+    <filter id="glow-storage" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#10b981" flood-opacity="0.3"/>
+    </filter>
+    <filter id="glow-agent" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#ec4899" flood-opacity="0.3"/>
+    </filter>
+    <filter id="glow-llm" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#64748b" flood-opacity="0.2"/>
+    </filter>
+
+    <!-- Arrow Markers -->
+    <marker id="arrow-blue" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+      <path d="M0,0 L8,4 L0,8 z" fill="#38bdf8"/>
+    </marker>
+    <marker id="arrow-purple" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+      <path d="M0,0 L8,4 L0,8 z" fill="#a78bfa"/>
+    </marker>
+    <marker id="arrow-green" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+      <path d="M0,0 L8,4 L0,8 z" fill="#34d399"/>
+    </marker>
+    <marker id="arrow-pink" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+      <path d="M0,0 L8,4 L0,8 z" fill="#f472b6"/>
+    </marker>
+    <marker id="arrow-slate" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+      <path d="M0,0 L8,4 L0,8 z" fill="#94a3b8"/>
+    </marker>
+
+    <!-- Global Styles -->
+    <style>
+      .main-title { font-family: 'Inter', system-ui, -apple-system, sans-serif; font-size: 38px; font-weight: 800; fill: #ffffff; letter-spacing: -0.5px; }
+      .subtitle { font-family: 'Inter', system-ui, -apple-system, sans-serif; font-size: 16px; font-weight: 500; fill: #94a3b8; }
+      .group-title { font-family: 'Inter', system-ui, -apple-system, sans-serif; font-size: 18px; font-weight: 700; fill: #f8fafc; text-transform: uppercase; letter-spacing: 0.5px; }
+      .node-title { font-family: 'Inter', system-ui, -apple-system, sans-serif; font-size: 14px; font-weight: 700; fill: #ffffff; }
+      .node-desc { font-family: 'Inter', system-ui, -apple-system, sans-serif; font-size: 12px; font-weight: 400; fill: #cbd5e1; }
+      .stage-title { font-family: 'Inter', system-ui, -apple-system, sans-serif; font-size: 12px; font-weight: 700; fill: #f472b6; }
+      .stage-desc { font-family: 'Inter', system-ui, -apple-system, sans-serif; font-size: 11px; font-weight: 500; fill: #e2e8f0; }
+      .legend-text { font-family: 'Inter', system-ui, -apple-system, sans-serif; font-size: 12px; font-weight: 600; fill: #94a3b8; }
+    </style>
+  </defs>
+  <rect width="1920" height="1200" fill="url(#bg-grad)"/>
+  <g stroke="#ffffff" stroke-opacity="0.02" stroke-width="1">
+    <line x1="100" y1="0" x2="100" y2="1200"/>
+    <line x1="200" y1="0" x2="200" y2="1200"/>
+    <line x1="300" y1="0" x2="300" y2="1200"/>
+    <line x1="400" y1="0" x2="400" y2="1200"/>
+    <line x1="500" y1="0" x2="500" y2="1200"/>
+    <line x1="600" y1="0" x2="600" y2="1200"/>
+    <line x1="700" y1="0" x2="700" y2="1200"/>
+    <line x1="800" y1="0" x2="800" y2="1200"/>
+    <line x1="900" y1="0" x2="900" y2="1200"/>
+    <line x1="1000" y1="0" x2="1000" y2="1200"/>
+    <line x1="1100" y1="0" x2="1100" y2="1200"/>
+    <line x1="1200" y1="0" x2="1200" y2="1200"/>
+    <line x1="1300" y1="0" x2="1300" y2="1200"/>
+    <line x1="1400" y1="0" x2="1400" y2="1200"/>
+    <line x1="1500" y1="0" x2="1500" y2="1200"/>
+    <line x1="1600" y1="0" x2="1600" y2="1200"/>
+    <line x1="1700" y1="0" x2="1700" y2="1200"/>
+    <line x1="1800" y1="0" x2="1800" y2="1200"/>
+    <line x1="1900" y1="0" x2="1900" y2="1200"/>
+    <line x1="0" y1="100" x2="1920" y2="100"/>
+    <line x1="0" y1="200" x2="1920" y2="200"/>
+    <line x1="0" y1="300" x2="1920" y2="300"/>
+    <line x1="0" y1="400" x2="1920" y2="400"/>
+    <line x1="0" y1="500" x2="1920" y2="500"/>
+    <line x1="0" y1="600" x2="1920" y2="600"/>
+    <line x1="0" y1="700" x2="1920" y2="700"/>
+    <line x1="0" y1="800" x2="1920" y2="800"/>
+    <line x1="0" y1="900" x2="1920" y2="900"/>
+    <line x1="0" y1="1000" x2="1920" y2="1000"/>
+    <line x1="0" y1="1100" x2="1920" y2="1100"/>
+  </g>
+  <g transform="translate(80, 80)">
+    <text x="0" y="0" class="main-title">Jobest System Architecture Diagram</text>
+    <text x="0" y="28" class="subtitle">Complete technical blueprint of the frontend components, backend routes, background queue, database, and multi-agent pipeline</text>
+  </g>
+  <!-- Group: Frontend - Next.js 15 & React 19 -->
+  <g transform="translate(60, 160)">
+    <rect width="320" height="860" rx="16" ry="16" fill="url(#frontend-grad)" stroke="#0ea5e9" stroke-opacity="0.3" stroke-width="2"/>
+    <text x="20" y="35" class="group-title" fill="#0ea5e9">Frontend - Next.js 15 & React 19</text>
+  </g>
+  <!-- Group: FastAPI Web Server -->
+  <g transform="translate(420, 160)">
+    <rect width="320" height="860" rx="16" ry="16" fill="url(#backend-grad)" stroke="#8b5cf6" stroke-opacity="0.3" stroke-width="2"/>
+    <text x="20" y="35" class="group-title" fill="#8b5cf6">FastAPI Web Server</text>
+  </g>
+  <!-- Group: Core Service & Workers -->
+  <g transform="translate(780, 160)">
+    <rect width="320" height="860" rx="16" ry="16" fill="url(#storage-grad)" stroke="#10b981" stroke-opacity="0.3" stroke-width="2"/>
+    <text x="20" y="35" class="group-title" fill="#10b981">Core Service & Workers</text>
+  </g>
+  <!-- Group: Orchestrated AI Pipelines -->
+  <g transform="translate(1140, 160)">
+    <rect width="400" height="980" rx="16" ry="16" fill="url(#agent-grad)" stroke="#ec4899" stroke-opacity="0.3" stroke-width="2"/>
+    <text x="20" y="35" class="group-title" fill="#ec4899">Orchestrated AI Pipelines</text>
+  </g>
+  <!-- Group: LLM Clients & Providers -->
+  <g transform="translate(1580, 160)">
+    <rect width="280" height="860" rx="16" ry="16" fill="url(#llm-grad)" stroke="#64748b" stroke-opacity="0.3" stroke-width="2"/>
+    <text x="20" y="35" class="group-title" fill="#64748b">LLM Clients & Providers</text>
+  </g>
+  <!-- Node: fe_shell -->
+  <g id="fe_shell">
+    <rect x="80" y="230" width="280" height="90" rx="12" ry="12" fill="#1e293b" fill-opacity="0.75" stroke="#38bdf8" stroke-width="1.5" filter="url(#glow-frontend)"/>
+    <text x="96" y="258" class="node-title">App Shell Layout</text>
+    <text x="96" y="278" class="node-desc">Handles core navbar, settings</text>
+    <text x="96" y="294" class="node-desc">views, and authorization UI states.</text>
+  </g>
+  <!-- Node: fe_jobs -->
+  <g id="fe_jobs">
+    <rect x="80" y="360" width="280" height="90" rx="12" ry="12" fill="#1e293b" fill-opacity="0.75" stroke="#38bdf8" stroke-width="1.5" filter="url(#glow-frontend)"/>
+    <text x="96" y="388" class="node-title">Jobs Portal</text>
+    <text x="96" y="408" class="node-desc">JD ingestion workspace, skills</text>
+    <text x="96" y="424" class="node-desc">definition, and rubric</text>
+    <text x="96" y="440" class="node-desc">configurations.</text>
+  </g>
+  <!-- Node: fe_candidates -->
+  <g id="fe_candidates">
+    <rect x="80" y="490" width="280" height="90" rx="12" ry="12" fill="#1e293b" fill-opacity="0.75" stroke="#38bdf8" stroke-width="1.5" filter="url(#glow-frontend)"/>
+    <text x="96" y="518" class="node-title">Candidate Portal</text>
+    <text x="96" y="538" class="node-desc">Bulk resume PDF uploads and initial</text>
+    <text x="96" y="554" class="node-desc">triage keyword-match scoring list.</text>
+  </g>
+  <!-- Node: fe_runs -->
+  <g id="fe_runs">
+    <rect x="80" y="620" width="280" height="90" rx="12" ry="12" fill="#1e293b" fill-opacity="0.75" stroke="#38bdf8" stroke-width="1.5" filter="url(#glow-frontend)"/>
+    <text x="96" y="648" class="node-title">Live Run Loader</text>
+    <text x="96" y="668" class="node-desc">SSE-like real-time visual progress</text>
+    <text x="96" y="684" class="node-desc">trackers for running agent workers.</text>
+  </g>
+  <!-- Node: fe_reports -->
+  <g id="fe_reports">
+    <rect x="80" y="750" width="280" height="90" rx="12" ry="12" fill="#1e293b" fill-opacity="0.75" stroke="#38bdf8" stroke-width="1.5" filter="url(#glow-frontend)"/>
+    <text x="96" y="778" class="node-title">Final Candidate Reports</text>
+    <text x="96" y="798" class="node-desc">Renders evidence matching tables,</text>
+    <text x="96" y="814" class="node-desc">footprint scores, and panel views.</text>
+  </g>
+  <!-- Node: fe_copilot -->
+  <g id="fe_copilot">
+    <rect x="80" y="880" width="280" height="90" rx="12" ry="12" fill="#1e293b" fill-opacity="0.75" stroke="#0ea5e9" stroke-width="1.5" filter="url(#glow-frontend)"/>
+    <text x="96" y="908" class="node-title">Finalist AI Copilot UI</text>
+    <text x="96" y="928" class="node-desc">Interactive chat workspace for</text>
+    <text x="96" y="944" class="node-desc">executing pipeline commands & tool</text>
+    <text x="96" y="960" class="node-desc">confirms.</text>
+  </g>
+  <!-- Node: be_main -->
+  <g id="be_main">
+    <rect x="440" y="230" width="280" height="90" rx="12" ry="12" fill="#1e293b" fill-opacity="0.75" stroke="#a78bfa" stroke-width="1.5" filter="url(#glow-backend)"/>
+    <text x="456" y="258" class="node-title">FastAPI Main App Entry</text>
+    <text x="456" y="278" class="node-desc">Initializes uvicorn, manages CORS</text>
+    <text x="456" y="294" class="node-desc">origins, handles startup DB</text>
+    <text x="456" y="310" class="node-desc">updates.</text>
+  </g>
+  <!-- Node: be_auth -->
+  <g id="be_auth">
+    <rect x="440" y="360" width="280" height="90" rx="12" ry="12" fill="#1e293b" fill-opacity="0.75" stroke="#a78bfa" stroke-width="1.5" filter="url(#glow-backend)"/>
+    <text x="456" y="388" class="node-title">Base / Auth Routes</text>
+    <text x="456" y="408" class="node-desc">User logins, organization invites,</text>
+    <text x="456" y="424" class="node-desc">base system health diagnostics.</text>
+  </g>
+  <!-- Node: be_org -->
+  <g id="be_org">
+    <rect x="440" y="490" width="280" height="90" rx="12" ry="12" fill="#1e293b" fill-opacity="0.75" stroke="#a78bfa" stroke-width="1.5" filter="url(#glow-backend)"/>
+    <text x="456" y="518" class="node-title">Organization / Job Routes</text>
+    <text x="456" y="538" class="node-desc">Handles postings, bulk uploads,</text>
+    <text x="456" y="554" class="node-desc">triage triggers, and candidate</text>
+    <text x="456" y="570" class="node-desc">lists.</text>
+  </g>
+  <!-- Node: be_run_routes -->
+  <g id="be_run_routes">
+    <rect x="440" y="620" width="280" height="90" rx="12" ry="12" fill="#1e293b" fill-opacity="0.75" stroke="#a78bfa" stroke-width="1.5" filter="url(#glow-backend)"/>
+    <text x="456" y="648" class="node-title">Analysis Run Routes</text>
+    <text x="456" y="668" class="node-desc">Enqueues pipeline executions,</text>
+    <text x="456" y="684" class="node-desc">tracks worker slots, checks run</text>
+    <text x="456" y="700" class="node-desc">statuses.</text>
+  </g>
+  <!-- Node: be_ai_routes -->
+  <g id="be_ai_routes">
+    <rect x="440" y="750" width="280" height="90" rx="12" ry="12" fill="#1e293b" fill-opacity="0.75" stroke="#8b5cf6" stroke-width="1.5" filter="url(#glow-backend)"/>
+    <text x="456" y="778" class="node-title">AI Copilot API Router</text>
+    <text x="456" y="798" class="node-desc">Traces tool calls, executes</text>
+    <text x="456" y="814" class="node-desc">workspace changes, and saves</text>
+    <text x="456" y="830" class="node-desc">pending actions.</text>
+  </g>
+  <!-- Node: srv_queue -->
+  <g id="srv_queue">
+    <rect x="800" y="230" width="280" height="90" rx="12" ry="12" fill="#1e293b" fill-opacity="0.75" stroke="#34d399" stroke-width="1.5" filter="url(#glow-storage)"/>
+    <text x="816" y="258" class="node-title">Analysis Queue Manager</text>
+    <text x="816" y="278" class="node-desc">Async worker consumer loop.</text>
+    <text x="816" y="294" class="node-desc">Resolves parallel slots and</text>
+    <text x="816" y="310" class="node-desc">concurrency limits.</text>
+  </g>
+  <!-- Node: srv_pdf -->
+  <g id="srv_pdf">
+    <rect x="800" y="360" width="280" height="90" rx="12" ry="12" fill="#1e293b" fill-opacity="0.75" stroke="#34d399" stroke-width="1.5" filter="url(#glow-storage)"/>
+    <text x="816" y="388" class="node-title">PDF Ingestion Engine</text>
+    <text x="816" y="408" class="node-desc">Extracts text from uploaded PDF</text>
+    <text x="816" y="424" class="node-desc">resumes using the PyMuPDF library.</text>
+  </g>
+  <!-- Node: srv_triage -->
+  <g id="srv_triage">
+    <rect x="800" y="490" width="280" height="90" rx="12" ry="12" fill="#1e293b" fill-opacity="0.75" stroke="#34d399" stroke-width="1.5" filter="url(#glow-storage)"/>
+    <text x="816" y="518" class="node-title">Triage & Scoring Service</text>
+    <text x="816" y="538" class="node-desc">Performs keyword scan matching and</text>
+    <text x="816" y="554" class="node-desc">first-pass sorting (capped at 80).</text>
+  </g>
+  <!-- Node: srv_db -->
+  <g id="srv_db">
+    <rect x="800" y="620" width="280" height="140" rx="12" ry="12" fill="#1e293b" fill-opacity="0.75" stroke="#10b981" stroke-width="1.5" filter="url(#glow-storage)"/>
+    <text x="816" y="648" class="node-title">SQLAlchemy DB Connection</text>
+    <text x="816" y="668" class="node-desc">Orchestrates SQLite transactional</text>
+    <text x="816" y="684" class="node-desc">updates on 'jobest.db' containing</text>
+    <text x="816" y="700" class="node-desc">candidate final outputs, run stage</text>
+  </g>
+  <!-- Node: agt_orch -->
+  <g id="agt_orch">
+    <rect x="1160" y="230" width="360" height="90" rx="12" ry="12" fill="#1e293b" fill-opacity="0.75" stroke="#f472b6" stroke-width="1.5" filter="url(#glow-agent)"/>
+    <text x="1176" y="258" class="node-title">Pipeline Orchestrator</text>
+    <text x="1176" y="278" class="node-desc">Coordinates the 12 pipeline</text>
+    <text x="1176" y="294" class="node-desc">specialist stages sequentially.</text>
+    <text x="1176" y="310" class="node-desc">Saves stage status updates.</text>
+  </g>
+  <!-- Node: agt_stages -->
+  <g id="agt_stages">
+    <rect x="1160" y="360" width="360" height="500" rx="12" ry="12" fill="#1e293b" fill-opacity="0.75" stroke="#ec4899" stroke-width="1.5" filter="url(#glow-agent)"/>
+    <text x="1176" y="388" class="node-title">12 Specialist Agents Flow</text>
+  </g>
+  <!-- Node: agt_fetcher -->
+  <g id="agt_fetcher">
+    <rect x="1160" y="900" width="360" height="110" rx="12" ry="12" fill="#1e293b" fill-opacity="0.75" stroke="#f472b6" stroke-width="1.5" filter="url(#glow-agent)"/>
+    <text x="1176" y="928" class="node-title">Professional Footprint Fetcher</text>
+    <text x="1176" y="948" class="node-desc">Performs concurrent web queries via</text>
+    <text x="1176" y="964" class="node-desc">httpx. Visited pages include GitHub</text>
+    <text x="1176" y="980" class="node-desc">repos, scholar records, and</text>
+  </g>
+  <!-- Node: llm_client -->
+  <g id="llm_client">
+    <rect x="1600" y="230" width="240" height="90" rx="12" ry="12" fill="#1e293b" fill-opacity="0.75" stroke="#94a3b8" stroke-width="1.5" filter="url(#glow-llm)"/>
+    <text x="1616" y="258" class="node-title">LLMClient & ModelRouter</text>
+    <text x="1616" y="278" class="node-desc">Main interface for agent LLM</text>
+    <text x="1616" y="294" class="node-desc">calls. Retries, repairs</text>
+    <text x="1616" y="310" class="node-desc">JSON, and caches runs.</text>
+  </g>
+  <!-- Node: llm_mock -->
+  <g id="llm_mock">
+    <rect x="1600" y="360" width="240" height="70" rx="12" ry="12" fill="#1e293b" fill-opacity="0.75" stroke="#94a3b8" stroke-width="1.5" filter="url(#glow-llm)"/>
+    <text x="1616" y="388" class="node-title">Local Mock Mode</text>
+    <text x="1616" y="408" class="node-desc">Emulates static agent runs.</text>
+  </g>
+  <!-- Node: llm_chutes -->
+  <g id="llm_chutes">
+    <rect x="1600" y="470" width="240" height="70" rx="12" ry="12" fill="#1e293b" fill-opacity="0.75" stroke="#cbd5e1" stroke-width="1.5" filter="url(#glow-llm)"/>
+    <text x="1616" y="498" class="node-title">Chutes TEE Provider</text>
+    <text x="1616" y="518" class="node-desc">Primary Qwen 2.5 32B model</text>
+    <text x="1616" y="534" class="node-desc">TEE.</text>
+  </g>
+  <!-- Node: llm_nvidia -->
+  <g id="llm_nvidia">
+    <rect x="1600" y="580" width="240" height="70" rx="12" ry="12" fill="#1e293b" fill-opacity="0.75" stroke="#cbd5e1" stroke-width="1.5" filter="url(#glow-llm)"/>
+    <text x="1616" y="608" class="node-title">NVIDIA NIM Router</text>
+    <text x="1616" y="628" class="node-desc">Fast cloud LLM inference</text>
+    <text x="1616" y="644" class="node-desc">API.</text>
+  </g>
+  <!-- Node: llm_fallback -->
+  <g id="llm_fallback">
+    <rect x="1600" y="690" width="240" height="70" rx="12" ry="12" fill="#1e293b" fill-opacity="0.75" stroke="#94a3b8" stroke-width="1.5" filter="url(#glow-llm)"/>
+    <text x="1616" y="718" class="node-title">OpenRouter Fallback</text>
+    <text x="1616" y="738" class="node-desc">Guarantees runtime uptime.</text>
+  </g>
+  <!-- Inner Stage: 1. JD Deconstruction -->
+  <g transform="translate(1176, 405)">
+    <rect width="155" height="52" rx="8" ry="8" fill="#0f172a" fill-opacity="0.9" stroke="#ec4899" stroke-opacity="0.6" stroke-width="1"/>
+    <text x="8" y="18" class="stage-title">1. JD Deconstruction</text>
+    <text x="8" y="34" class="node-desc" font-size="10px">Pipeline Agent Stage</text>
+  </g>
+  <!-- Inner Stage: 2. Hiring Context -->
+  <g transform="translate(1346, 405)">
+    <rect width="155" height="52" rx="8" ry="8" fill="#0f172a" fill-opacity="0.9" stroke="#ec4899" stroke-opacity="0.6" stroke-width="1"/>
+    <text x="8" y="18" class="stage-title">2. Hiring Context</text>
+    <text x="8" y="34" class="node-desc" font-size="10px">Pipeline Agent Stage</text>
+  </g>
+  <!-- Inner Stage: 3. Resume Parsing -->
+  <g transform="translate(1176, 473)">
+    <rect width="155" height="52" rx="8" ry="8" fill="#0f172a" fill-opacity="0.9" stroke="#ec4899" stroke-opacity="0.6" stroke-width="1"/>
+    <text x="8" y="18" class="stage-title">3. Resume Parsing</text>
+    <text x="8" y="34" class="node-desc" font-size="10px">Pipeline Agent Stage</text>
+  </g>
+  <!-- Inner Stage: 4. Evidence Extraction -->
+  <g transform="translate(1346, 473)">
+    <rect width="155" height="52" rx="8" ry="8" fill="#0f172a" fill-opacity="0.9" stroke="#ec4899" stroke-opacity="0.6" stroke-width="1"/>
+    <text x="8" y="18" class="stage-title">4. Evidence Extraction</text>
+    <text x="8" y="34" class="node-desc" font-size="10px">Pipeline Agent Stage</text>
+  </g>
+  <!-- Inner Stage: 5. Skill Transferability -->
+  <g transform="translate(1176, 541)">
+    <rect width="155" height="52" rx="8" ry="8" fill="#0f172a" fill-opacity="0.9" stroke="#ec4899" stroke-opacity="0.6" stroke-width="1"/>
+    <text x="8" y="18" class="stage-title">5. Skill Transferability</text>
+    <text x="8" y="34" class="node-desc" font-size="10px">Pipeline Agent Stage</text>
+  </g>
+  <!-- Inner Stage: 6. Footprint Fetcher -->
+  <g transform="translate(1346, 541)">
+    <rect width="155" height="52" rx="8" ry="8" fill="#0f172a" fill-opacity="0.9" stroke="#ec4899" stroke-opacity="0.6" stroke-width="1"/>
+    <text x="8" y="18" class="stage-title">6. Footprint Fetcher</text>
+    <text x="8" y="34" class="node-desc" font-size="10px">Pipeline Agent Stage</text>
+  </g>
+  <!-- Inner Stage: 7. Footprint Audit -->
+  <g transform="translate(1176, 609)">
+    <rect width="155" height="52" rx="8" ry="8" fill="#0f172a" fill-opacity="0.9" stroke="#ec4899" stroke-opacity="0.6" stroke-width="1"/>
+    <text x="8" y="18" class="stage-title">7. Footprint Audit</text>
+    <text x="8" y="34" class="node-desc" font-size="10px">Pipeline Agent Stage</text>
+  </g>
+  <!-- Inner Stage: 8. Risk Auditor -->
+  <g transform="translate(1346, 609)">
+    <rect width="155" height="52" rx="8" ry="8" fill="#0f172a" fill-opacity="0.9" stroke="#ec4899" stroke-opacity="0.6" stroke-width="1"/>
+    <text x="8" y="18" class="stage-title">8. Risk Auditor</text>
+    <text x="8" y="34" class="node-desc" font-size="10px">Pipeline Agent Stage</text>
+  </g>
+  <!-- Inner Stage: 9. Score Aggregator -->
+  <g transform="translate(1176, 677)">
+    <rect width="155" height="52" rx="8" ry="8" fill="#0f172a" fill-opacity="0.9" stroke="#ec4899" stroke-opacity="0.6" stroke-width="1"/>
+    <text x="8" y="18" class="stage-title">9. Score Aggregator</text>
+    <text x="8" y="34" class="node-desc" font-size="10px">Pipeline Agent Stage</text>
+  </g>
+  <!-- Inner Stage: 10. Panel Review -->
+  <g transform="translate(1346, 677)">
+    <rect width="155" height="52" rx="8" ry="8" fill="#0f172a" fill-opacity="0.9" stroke="#ec4899" stroke-opacity="0.6" stroke-width="1"/>
+    <text x="8" y="18" class="stage-title">10. Panel Review</text>
+    <text x="8" y="34" class="node-desc" font-size="10px">Pipeline Agent Stage</text>
+  </g>
+  <!-- Inner Stage: 11. Interview Generator -->
+  <g transform="translate(1176, 745)">
+    <rect width="155" height="52" rx="8" ry="8" fill="#0f172a" fill-opacity="0.9" stroke="#ec4899" stroke-opacity="0.6" stroke-width="1"/>
+    <text x="8" y="18" class="stage-title">11. Interview Generator</text>
+    <text x="8" y="34" class="node-desc" font-size="10px">Pipeline Agent Stage</text>
+  </g>
+  <!-- Inner Stage: 12. Final Shortlist Report -->
+  <g transform="translate(1346, 745)">
+    <rect width="155" height="52" rx="8" ry="8" fill="#0f172a" fill-opacity="0.9" stroke="#ec4899" stroke-opacity="0.6" stroke-width="1"/>
+    <text x="8" y="18" class="stage-title">12. Final Shortlist Report</text>
+    <text x="8" y="34" class="node-desc" font-size="10px">Pipeline Agent Stage</text>
+  </g>
+  <text x="1176" y="392" class="node-desc" font-weight="700" fill="#f472b6">Sequential execution with cached intermediate state recovery</text>
+  <path d="M 360 275 L 440 275" fill="none" stroke="#38bdf8" stroke-width="2" marker-end="url(#arrow-blue)"/>
+  <path d="M 360 405 L 440 405" fill="none" stroke="#38bdf8" stroke-width="2" marker-end="url(#arrow-blue)"/>
+  <path d="M 360 535 L 440 535" fill="none" stroke="#38bdf8" stroke-width="2" marker-end="url(#arrow-blue)"/>
+  <path d="M 360 665 L 440 665" fill="none" stroke="#38bdf8" stroke-width="2" marker-end="url(#arrow-blue)"/>
+  <path d="M 360 795 L 440 795" fill="none" stroke="#38bdf8" stroke-width="2" marker-end="url(#arrow-blue)"/>
+  <path d="M 360 925 C 400 925 400 805 440 805" fill="none" stroke="#38bdf8" stroke-width="2" marker-end="url(#arrow-blue)"/>
+  <path d="M 720 535 L 800 535" fill="none" stroke="#a78bfa" stroke-width="2" marker-end="url(#arrow-purple)"/>
+  <path d="M 720 665 L 800 275" fill="none" stroke="#a78bfa" stroke-width="2" marker-end="url(#arrow-purple)"/>
+  <path d="M 720 795 C 760 795 760 690 800 690" fill="none" stroke="#a78bfa" stroke-width="2" marker-end="url(#arrow-purple)"/>
+  <path d="M 940 315 C 970 315 970 275 800 275" fill="none" stroke="#34d399" stroke-width="2" marker-end="url(#arrow-green)"/>
+  <path d="M 940 405 C 970 405 970 650 940 650" fill="none" stroke="#34d399" stroke-width="2" marker-end="url(#arrow-green)"/>
+  <path d="M 940 535 C 970 535 970 670 940 670" fill="none" stroke="#34d399" stroke-width="2" marker-end="url(#arrow-green)"/>
+  <path d="M 1080 275 L 1160 275" fill="none" stroke="#34d399" stroke-width="2" marker-end="url(#arrow-green)"/>
+  <path d="M 1340 320 L 1340 360" fill="none" stroke="#f472b6" stroke-width="2" marker-end="url(#arrow-pink)"/>
+  <path d="M 1340 860 L 1340 900" fill="none" stroke="#f472b6" stroke-width="2" marker-end="url(#arrow-pink)"/>
+  <path d="M 1160 955 C 1080 955 1080 720 1080 720" fill="none" stroke="#f472b6" stroke-width="2" marker-end="url(#arrow-pink)"/>
+  <path d="M 1160 295 C 1080 295 1080 635 1080 635" fill="none" stroke="#f472b6" stroke-width="2" marker-end="url(#arrow-pink)"/>
+  <path d="M 1520 275 L 1600 275" fill="none" stroke="#f472b6" stroke-width="2" marker-end="url(#arrow-pink)"/>
+  <path d="M 1720 320 L 1720 360" fill="none" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow-slate)"/>
+  <path d="M 1720 320 C 1720 340 1720 340 1720 470" fill="none" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow-slate)"/>
+  <path d="M 1720 320 C 1720 340 1720 340 1720 580" fill="none" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow-slate)"/>
+  <path d="M 1720 320 C 1720 340 1720 340 1720 690" fill="none" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow-slate)"/>
+  <!-- Legend -->
+  <g transform="translate(60, 1080)">
+    <rect width="1800" height="60" rx="10" ry="10" fill="#1e293b" fill-opacity="0.5" stroke="#475569" stroke-width="1.5"/>
+    <g transform="translate(60, 20)">
+      <line x1="0" y1="10" x2="30" y2="10" stroke="#38bdf8" stroke-width="3"/>
+      <circle cx="30" cy="10" r="4" fill="#38bdf8"/>
+      <text x="42" y="14" class="legend-text">HTTP / Client API Call</text>
+    </g>
+    <g transform="translate(300, 20)">
+      <line x1="0" y1="10" x2="30" y2="10" stroke="#a78bfa" stroke-width="3"/>
+      <circle cx="30" cy="10" r="4" fill="#a78bfa"/>
+      <text x="42" y="14" class="legend-text">Backend Endpoint Route Trigger</text>
+    </g>
+    <g transform="translate(580, 20)">
+      <line x1="0" y1="10" x2="30" y2="10" stroke="#34d399" stroke-width="3"/>
+      <circle cx="30" cy="10" r="4" fill="#34d399"/>
+      <text x="42" y="14" class="legend-text">Background Task Concurrency / Ingestion Flow</text>
+    </g>
+    <g transform="translate(930, 20)">
+      <line x1="0" y1="10" x2="30" y2="10" stroke="#f472b6" stroke-width="3"/>
+      <circle cx="30" cy="10" r="4" fill="#f472b6"/>
+      <text x="42" y="14" class="legend-text">Agent Stage Sequence & Context Evaluation</text>
+    </g>
+    <g transform="translate(1280, 20)">
+      <line x1="0" y1="10" x2="30" y2="10" stroke="#94a3b8" stroke-width="3"/>
+      <circle cx="30" cy="10" r="4" fill="#94a3b8"/>
+      <text x="42" y="14" class="legend-text">LLM Integration Provider Call</text>
+    </g>
+  </g>
+</svg>

@@ -1,0 +1,16 @@
+{
+  "candidates": [
+    {
+      "name": "Alice Smith",
+      "score": 85.5,
+      "verdict": "Strong match for technical leadership and system architecture."
+    },
+    {
+      "name": "Bob Jones",
+      "score": 72.0,
+      "verdict": "Good hands-on developer but lacks team-lead experience."
+    }
+  ],
+  "comparison": "Alice Smith has stronger leadership and design experience, whereas Bob Jones is more focused on individual contributor tasks.",
+  "recommended": "Alice Smith"
+}

@@ -11,6 +11,7 @@ import {
   LayoutDashboard,
   LogOut,
   Plus,
+  Settings,
   Search,
   Sparkles,
   Users,
@@ -21,10 +22,12 @@ import { cn } from "@/lib/utils";
 
 const navItems = [
   { href: "/jobs", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/ai", label: "AI Copilot", icon: Sparkles },
   { href: "/jobs/current", label: "Current Postings", icon: BriefcaseBusiness },
   { href: "/jobs/new", label: "New Posting", icon: BriefcaseBusiness },
   { href: "/candidates", label: "Candidates", icon: Users },
   { href: "/reports", label: "Reports", icon: ChartColumnBig },
+  { href: "/settings", label: "Settings", icon: Settings },
 ];
 
 function resolveTabTitle(pathname: string, pageTitle?: string) {
@@ -32,6 +35,7 @@ function resolveTabTitle(pathname: string, pageTitle?: string) {
   if (trimmedTitle) return `Jobest | ${trimmedTitle}`;
 
   if (pathname === "/jobs") return "Jobest | Dashboard";
+  if (pathname === "/ai") return "Jobest | AI Copilot";
   if (pathname.startsWith("/jobs/current")) return "Jobest | Current Postings";
   if (pathname.startsWith("/jobs/new")) return "Jobest | New Posting";
   if (pathname.startsWith("/jobs/")) return "Jobest | Job Details";
@@ -39,6 +43,8 @@ function resolveTabTitle(pathname: string, pageTitle?: string) {
   if (pathname.startsWith("/candidates/") && pathname.endsWith("/report")) return "Jobest | Candidate Report";
   if (pathname.startsWith("/candidates/")) return "Jobest | Candidate";
   if (pathname === "/reports") return "Jobest | Reports";
+  if (pathname === "/agents") return "Jobest | Agents";
+  if (pathname === "/settings") return "Jobest | Settings";
   if (pathname.startsWith("/runs/") && pathname.endsWith("/pipeline")) return "Jobest | Hiring Pipeline";
   if (pathname.startsWith("/runs/") && pathname.endsWith("/shortlist")) return "Jobest | Shortlist";
   if (pathname.startsWith("/runs/") && pathname.endsWith("/report")) return "Jobest | Hiring Report";
@@ -54,14 +60,21 @@ function isNavItemActive(pathname: string, href: string) {
 }
 
 function formatMalaysiaNotificationTime(value: string) {
+  if (!value) return "--";
   const normalizedValue =
     /(?:Z|[+-]\d{2}:\d{2})$/.test(value) ? value : `${value}Z`;
-  return new Intl.DateTimeFormat("en-MY", {
-    timeZone: "Asia/Kuala_Lumpur",
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  }).format(new Date(normalizedValue));
+  const parsed = new Date(normalizedValue);
+  if (Number.isNaN(parsed.getTime())) return "--";
+  try {
+    return new Intl.DateTimeFormat("en-MY", {
+      timeZone: "Asia/Kuala_Lumpur",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    }).format(parsed);
+  } catch {
+    return "--";
+  }
 }
 
 function initialsFromName(name: string) {
@@ -215,7 +228,8 @@ export function AppShell({
             })}
           </nav>
 
-          <div className="mt-auto rounded-2xl border border-slate-200 bg-white p-4">
+          <div className="mt-auto pt-8">
+            <div className="rounded-2xl border border-slate-200 bg-white p-4">
             <div className="text-xs uppercase tracking-[0.2em] text-slate-500">Quick Actions</div>
             <div className="mt-3 space-y-2">
               <Link
@@ -240,14 +254,15 @@ export function AppShell({
                 <ChartColumnBig className="h-4 w-4 text-accent" />
               </Link>
             </div>
-          </div>
-
-          <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
-            <div className="flex items-center gap-2 text-sm font-semibold text-slate-700">
-              <CircleHelp className="h-4 w-4 text-accent" />
-              Need help?
             </div>
-            <div className="mt-2 text-xs text-slate-500">Visit Help Center</div>
+
+            <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
+              <div className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+                <CircleHelp className="h-4 w-4 text-accent" />
+                Need help?
+              </div>
+              <div className="mt-2 text-xs text-slate-500">Visit Help Center</div>
+            </div>
           </div>
         </aside>
 
@@ -390,7 +405,7 @@ export function AppShell({
             </div>
           </div>
 
-          <div className="px-6 py-6">
+          <div className="px-6 pb-6 pt-8">
             <div className={noPageHeader ? "" : "rounded-2xl border border-slate-200 bg-white p-6"}>
               {!noPageHeader && (
                 <div className="mb-6 flex flex-col gap-4 border-b border-slate-100 pb-5 lg:flex-row lg:items-center lg:justify-between">

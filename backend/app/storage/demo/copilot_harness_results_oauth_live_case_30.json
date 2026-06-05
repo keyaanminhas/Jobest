@@ -1,0 +1,41 @@
+{
+  "summary": {
+    "user_email": "chutes_4bdb7947-29c8-5f16-bb18-f98cb18fb6e3@oauth.jobest.local",
+    "planner_mode": "current",
+    "case_count": 1,
+    "cases_with_tools": 1,
+    "cases_with_confirmation": 1,
+    "generic_fallback_count": 0,
+    "direct_answer_count": 1
+  },
+  "results": [
+    {
+      "id": 30,
+      "section": "B. Job Creation and Job Updates",
+      "prompt": "Update the posting to deprioritize academic research and emphasize production delivery.",
+      "expected": "Apply a contextual rewrite to hiring criteria.",
+      "scope_hint": "workspace",
+      "action_class": "write_or_confirmation",
+      "tool_step_count": 1,
+      "tool_steps": [
+        {
+          "tool_name": "update_job_posting",
+          "risk_class": "write_safe",
+          "status": "awaiting_confirmation",
+          "arguments": {
+            "job_posting_id": "9bd2c696-41af-4cdd-ba28-77d07b3f6545",
+            "hiring_context": "Deprioritize academic research and emphasize production delivery, pragmatic execution, and shipping real systems."
+          },
+          "planner": "fallback"
+        }
+      ],
+      "answer": "This action changes workspace state and needs confirmation.\n\nApprove `update_job_posting` with arguments: {\"job_posting_id\": \"9bd2c696-41af-4cdd-ba28-77d07b3f6545\", \"hiring_context\": \"Deprioritize academic research and emphasize production delivery, pragmatic execution, and shipping real systems.\"}",
+      "used_tools": [
+        "update_job_posting"
+      ],
+      "awaiting_confirmation": true,
+      "generic_fallback_detected": false,
+      "answered_directly": true
+    }
+  ]
+}

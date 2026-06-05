@@ -5,6 +5,53 @@ import { ChevronDown, ChevronRight } from "lucide-react";
 import { useState } from "react";
 import { cn, formatScore } from "@/lib/utils";
 
+export type TriageBand = {
+  label: string;
+  accent: string;
+  track: string;
+  text: string;
+  percent: number;
+};
+
+export function getTriageBand(scoreOutOf80: number): TriageBand {
+  const safeScore = Number.isFinite(scoreOutOf80) ? Math.max(0, Math.min(80, scoreOutOf80)) : 0;
+  const percent = (safeScore / 80) * 100;
+  if (safeScore >= 56) {
+    return {
+      label: "Excellent",
+      accent: "#16a34a",
+      track: "bg-emerald-50",
+      text: "text-emerald-700",
+      percent,
+    };
+  }
+  if (safeScore >= 44) {
+    return {
+      label: "Strong",
+      accent: "#0284c7",
+      track: "bg-sky-50",
+      text: "text-sky-700",
+      percent,
+    };
+  }
+  if (safeScore >= 28) {
+    return {
+      label: "Average",
+      accent: "#d97706",
+      track: "bg-amber-50",
+      text: "text-amber-700",
+      percent,
+    };
+  }
+  return {
+    label: "Low",
+    accent: "#dc2626",
+    track: "bg-rose-50",
+    text: "text-rose-700",
+    percent,
+  };
+}
+
 export function Panel({
   title,
   subtitle,
@@ -140,6 +187,22 @@ export function ScoreRing({ score }: { score: number }) {
       style={{ background: `conic-gradient(#22c55e ${angle}deg, #e5e7eb 0deg)` }}
     >
       <div className="grid h-10 w-10 place-items-center rounded-full bg-white text-[11px] font-bold text-slate-900">{formatScore(score)}</div>
+    </div>
+  );
+}
+
+export function TriageBandBadge({ score }: { score: number }) {
+  const band = getTriageBand(score);
+  return (
+    <div className={cn("inline-flex min-w-[112px] items-center gap-2 rounded-2xl border border-slate-200 px-3 py-2 shadow-sm", band.track)}>
+      <span
+        className="h-2.5 w-2.5 shrink-0 rounded-full"
+        style={{ backgroundColor: band.accent }}
+      />
+      <div className="min-w-0">
+        <div className={cn("truncate text-[11px] font-extrabold uppercase tracking-[0.12em]", band.text)}>{band.label}</div>
+        <div className="text-[10px] font-medium text-slate-500">Triage band</div>
+      </div>
     </div>
   );
 }

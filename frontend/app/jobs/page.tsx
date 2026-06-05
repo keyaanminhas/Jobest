@@ -1,7 +1,7 @@
 "use client";
 
 import { AppShell } from "@/components/app-shell";
-import { EmptyState, MetricCard, Panel, PrimaryButton, RecommendationBadge, ScoreRing, SecondaryButton } from "@/components/ui";
+import { EmptyState, MetricCard, Panel, PrimaryButton, RecommendationBadge, ScoreRing, SecondaryButton, TriageBandBadge } from "@/components/ui";
 import { getAnalysisQueueStatus, getCurrentUser, listAllCandidates, listJobPostings, listReports, logout } from "@/lib/api";
 import { AnalysisQueueStatus, CandidateListItem, CandidateReportListItem, JobPostingRecord } from "@/lib/types";
 import Link from "next/link";
@@ -268,9 +268,15 @@ export default function JobsPage() {
                       <div className="font-semibold text-slate-900">{candidate.display_name}</div>
                       <div className="text-[12px] text-slate-500">{candidate.job_posting_title}</div>
                     </div>
-                    <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">{candidate.current_score_type} score</div>
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                      {candidate.current_score_type === "triage" ? "triage band" : "final score"}
+                    </div>
                     <div className="flex lg:justify-center">
-                      <ScoreRing score={candidate.current_score_type === "triage" ? (candidate.current_score / 80) * 100 : candidate.current_score} />
+                      {candidate.current_score_type === "triage" ? (
+                        <TriageBandBadge score={candidate.current_score} />
+                      ) : (
+                        <ScoreRing score={candidate.current_score} />
+                      )}
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
                       {candidate.recommendation ? <RecommendationBadge recommendation={candidate.recommendation} /> : null}

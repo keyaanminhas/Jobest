@@ -4,6 +4,12 @@ import { demoRun, demoRunId } from "@/lib/demo-data";
 import { clearAuthToken, getAuthToken, setAuthToken } from "@/lib/session";
 import { getRunLocal, saveRunLocal } from "@/lib/storage";
 import {
+  AgentModelsResponse,
+  AgentChatSession,
+  AgentChatSessionSummary,
+  AgentChatTurn,
+  AgentSettings,
+  AgentsStatus,
   AnalysisQueueStatus,
   AuthResponse,
   CandidateAnalysisResponse,
@@ -18,10 +24,13 @@ import {
   HiringRunRecord,
   JobPostingRecord,
   NotificationListResponse,
+  PublicApplyResponse,
+  PublicJobPosting,
   SingleCvRunResponse,
+  UpdateAgentSettingsPayload,
 } from "@/lib/types";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL?.trim() || "";
 const API_KEY = process.env.NEXT_PUBLIC_API_KEY ?? "change-this-demo-key";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -134,6 +143,43 @@ export async function getJobPosting(jobPostingId: string) {
   return requestOrg<JobPostingRecord>(`/api/job-postings/${jobPostingId}`);
 }
 
+export async function getPublicJobPosting(token: string) {
+  return request<PublicJobPosting>(`/api/public/jobs/${token}`);
+}
+
+export async function applyToPublicJob(token: string, payload: {
+  firstName: string;
+  lastName: string;
+  phoneNumber: string;
+  email: string;
+  externalIdText?: string;
+  file: File;
+}) {
+  const body = new FormData();
+  body.append("first_name", payload.firstName.trim());
+  body.append("last_name", payload.lastName.trim());
+  body.append("phone_number", payload.phoneNumber.trim());
+  body.append("email", payload.email.trim());
+  if (payload.externalIdText?.trim()) {
+    body.append("external_id_text", payload.externalIdText.trim());
+  }
+  body.append("cv_pdf", payload.file);
+  return request<PublicApplyResponse>(`/api/public/jobs/${token}/apply`, {
+    method: "POST",
+    body,
+  });
+}
+
+export async function updateJobPosting(
+  jobPostingId: string,
+  payload: Partial<CreateJobPostingPayload> & { status?: string; public_applications_enabled?: boolean },
+) {
+  return requestOrg<JobPostingRecord>(`/api/job-postings/${jobPostingId}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function deleteJobPosting(jobPostingId: string) {
   return requestOrg<{ deleted: boolean }>(`/api/job-postings/${jobPostingId}`, {
     method: "DELETE",
@@ -142,6 +188,12 @@ export async function deleteJobPosting(jobPostingId: string) {
 
 export async function listCandidates(jobPostingId: string) {
   return requestOrg<CandidateListItem[]>(`/api/job-postings/${jobPostingId}/candidates`);
+}
+
+export async function deleteCandidate(jobPostingId: string, candidateId: string) {
+  return requestOrg<{ deleted: boolean }>(`/api/job-postings/${jobPostingId}/candidates/${candidateId}`, {
+    method: "DELETE",
+  });
 }
 
 export async function uploadCandidates(
@@ -224,6 +276,59 @@ export async function markNotificationRead(notificationId: string) {
 
 export async function markAllNotificationsRead() {
   return requestOrg<{ ok: boolean; updated: number }>("/api/notifications/read-all", {
+    method: "POST",
+  });
+}
+
+export async function getAgentSettings() {
+  return requestOrg<AgentSettings>("/api/agent-settings");
+}
+
+export async function updateAgentSettings(payload: UpdateAgentSettingsPayload) {
+  return requestOrg<AgentSettings>("/api/agent-settings", {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getAgentModels() {
+  return requestOrg<AgentModelsResponse>("/api/agent-settings/models");
+}
+
+export async function getAgentsStatus() {
+  return requestOrg<AgentsStatus>("/api/agents/status");
+}
+
+export async function createAgentChatSession(payload: { title?: string; job_posting_id?: string | null; candidate_id?: string | null }) {
+  return requestOrg<AgentChatSession>("/api/agent-chat/sessions", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function listAgentChatSessions() {
+  return requestOrg<AgentChatSessionSummary[]>("/api/agent-chat/sessions");
+}
+
+export async function getAgentChatSession(sessionId: string) {
+  return requestOrg<AgentChatSession>(`/api/agent-chat/sessions/${sessionId}`);
+}
+
+export async function sendAgentChatMessage(sessionId: string, content: string) {
+  return requestOrg<AgentChatTurn>(`/api/agent-chat/sessions/${sessionId}/messages`, {
+    method: "POST",
+    body: JSON.stringify({ content }),
+  });
+}
+
+export async function confirmAgentAction(actionId: string) {
+  return requestOrg<AgentChatTurn>(`/api/agent-chat/pending-actions/${actionId}/confirm`, {
+    method: "POST",
+  });
+}
+
+export async function cancelAgentAction(actionId: string) {
+  return requestOrg<AgentChatSession>(`/api/agent-chat/pending-actions/${actionId}/cancel`, {
     method: "POST",
   });
 }
