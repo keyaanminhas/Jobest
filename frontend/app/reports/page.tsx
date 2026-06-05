@@ -230,6 +230,28 @@ export default function ReportsIndexPage() {
     window.print();
   };
 
+  const copyTextToClipboard = async (text: string) => {
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+    const textArea = document.createElement("textarea");
+    textArea.value = text;
+    textArea.style.position = "fixed";
+    textArea.style.top = "0";
+    textArea.style.left = "0";
+    textArea.style.opacity = "0";
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+    try {
+      const successful = document.execCommand("copy");
+      if (!successful) throw new Error("Fallback copy failed");
+    } finally {
+      document.body.removeChild(textArea);
+    }
+  };
+
   const handleShareReport = async () => {
     const shareUrl = window.location.href;
     const shareTitle = "Hiring Report";
@@ -241,7 +263,7 @@ export default function ReportsIndexPage() {
         setActionMessage("Report share dialog opened.");
         return;
       }
-      await navigator.clipboard.writeText(shareUrl);
+      await copyTextToClipboard(shareUrl);
       setActionMessage("Report link copied to clipboard.");
     } catch {
       setActionMessage("Unable to share automatically. Copy the URL from your browser.");

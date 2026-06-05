@@ -120,13 +120,35 @@ export default function JobPostingDetailPage() {
     addFiles(Array.from(event.dataTransfer.files || []));
   }
 
+  async function copyTextToClipboard(text: string) {
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+    const textArea = document.createElement("textarea");
+    textArea.value = text;
+    textArea.style.position = "fixed";
+    textArea.style.top = "0";
+    textArea.style.left = "0";
+    textArea.style.opacity = "0";
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+    try {
+      const successful = document.execCommand("copy");
+      if (!successful) throw new Error("Fallback copy failed");
+    } finally {
+      document.body.removeChild(textArea);
+    }
+  }
+
   async function copyPublicUrl() {
     if (!shareUrl) {
       setError("Public application link is not ready for this posting yet.");
       return;
     }
     try {
-      await navigator.clipboard.writeText(shareUrl);
+      await copyTextToClipboard(shareUrl);
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch {

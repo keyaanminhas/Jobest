@@ -21,7 +21,7 @@ from app.schemas.agent_chat import (
     CreateAgentChatSessionRequest,
 )
 from app.services.agent_runtime import ISOLATED_STAGE_PREREQUISITES, RecruiterAgentRuntime, TOOL_MAP
-from app.services.model_router import ProviderConfig
+from app.services.model_router import ModelRouter, ProviderConfig
 from app.services.secret_crypto import decrypt_secret
 
 router = APIRouter(prefix="/api/agent-chat", tags=["agent-chat"])
@@ -423,19 +423,34 @@ def _pending_summary(tool_name: str, arguments: dict) -> str:
 
 async def _planner_provider_override(db: AsyncSession, user_id: str) -> ProviderConfig | None:
     settings = await db.scalar(select(UserAgentSettings).where(UserAgentSettings.user_id == user_id))
-    if settings is None or not settings.encrypted_api_key:
+    if settings is None:
         return None
+    router = ModelRouter.from_env()
+    provider_name = (settings.provider or router.primary.provider or "chutes").strip().lower()
+    default_provider = router.primary
+    if router.fallback is not None and provider_name == router.fallback.provider:
+        default_provider = router.fallback
+
+    api_key = ""
     try:
-        api_key = decrypt_secret(settings.encrypted_api_key).strip()
+        if settings.encrypted_api_key:
+            api_key = decrypt_secret(settings.encrypted_api_key).strip()
     except Exception:
-        return None
+        api_key = ""
     if not api_key:
+        if provider_name == router.primary.provider:
+            api_key = router.primary.api_key
+        elif router.fallback is not None and provider_name == router.fallback.provider:
+            api_key = router.fallback.api_key
+        else:
+            api_key = default_provider.api_key
+    if not api_key.strip():
         return None
     return ProviderConfig(
-        provider=settings.provider or "chutes",
-        base_url=settings.base_url or "https://llm.chutes.ai/v1",
+        provider=provider_name or default_provider.provider,
+        base_url=settings.base_url or default_provider.base_url,
         api_key=api_key,
-        model=settings.model or "google/gemma-4-31B-turbo-TEE",
+        model=settings.model or default_provider.model,
     )
 
 

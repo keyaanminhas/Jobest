@@ -87,9 +87,31 @@ export default function CurrentPostingsPage() {
   const shareUrl = sharePosting?.public_application_url || "";
   const shareToken = shareUrl ? shareUrl.split("/").filter(Boolean).pop() || "" : "";
 
+  async function copyTextToClipboard(text: string) {
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+    const textArea = document.createElement("textarea");
+    textArea.value = text;
+    textArea.style.position = "fixed";
+    textArea.style.top = "0";
+    textArea.style.left = "0";
+    textArea.style.opacity = "0";
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+    try {
+      const successful = document.execCommand("copy");
+      if (!successful) throw new Error("Fallback copy failed");
+    } finally {
+      document.body.removeChild(textArea);
+    }
+  }
+
   async function copyPublicUrl(url: string) {
     try {
-      await navigator.clipboard.writeText(url);
+      await copyTextToClipboard(url);
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch {

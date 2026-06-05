@@ -1,0 +1,279 @@
+{
+  "summary": {
+    "user_email": "chutes_4bdb7947-29c8-5f16-bb18-f98cb18fb6e3@oauth.jobest.local",
+    "planner_mode": "current",
+    "case_count": 10,
+    "cases_with_tools": 10,
+    "cases_with_confirmation": 0,
+    "generic_fallback_count": 0,
+    "direct_answer_count": 10
+  },
+  "results": [
+    {
+      "id": 1,
+      "section": "A. Workspace and Job Discovery",
+      "prompt": "List all job postings in this workspace.",
+      "expected": "Return every posting title with identifiers or clear names, without requiring extra context.",
+      "scope_hint": "workspace",
+      "action_class": "read_or_direct_answer",
+      "tool_step_count": 1,
+      "tool_steps": [
+        {
+          "tool_name": "list_job_postings",
+          "risk_class": "read",
+          "status": "completed",
+          "arguments": {},
+          "planner": "fallback",
+          "summary": "Found 4 job postings.\n\n- Senior SaaS Engineer (`c0becd70-c09e-419e-a15f-5b40d48533e0`)\n- Junior Robotics Software Engineer (`0273ddad-6be2-4b0c-8e9e-5fb37ed6e1b8`)\n- Cyber Security Professional (`bad53b3a-a8e9-419a-8d8a-b3d15f9ed018`)\n- Robotics and Mechatronics Engineer (`9bd2c696-41af-4cdd-ba28-77d07b3f6545`)"
+        }
+      ],
+      "answer": "Found 4 job postings.\n\n- **Senior SaaS Engineer** (`c0becd70-c09e-419e-a15f-5b40d48533e0`): active\n- **Junior Robotics Software Engineer** (`0273ddad-6be2-4b0c-8e9e-5fb37ed6e1b8`): active\n- **Cyber Security Professional** (`bad53b3a-a8e9-419a-8d8a-b3d15f9ed018`): active\n- **Robotics and Mechatronics Engineer** (`9bd2c696-41af-4cdd-ba28-77d07b3f6545`): active",
+      "used_tools": [
+        "list_job_postings"
+      ],
+      "awaiting_confirmation": false,
+      "generic_fallback_detected": false,
+      "answered_directly": true
+    },
+    {
+      "id": 2,
+      "section": "A. Workspace and Job Discovery",
+      "prompt": "Show all active job postings.",
+      "expected": "Return only active postings and omit inactive ones.",
+      "scope_hint": "workspace",
+      "action_class": "read_or_direct_answer",
+      "tool_step_count": 1,
+      "tool_steps": [
+        {
+          "tool_name": "list_job_postings",
+          "risk_class": "read",
+          "status": "completed",
+          "arguments": {},
+          "planner": "fallback",
+          "summary": "Found 4 job postings.\n\n- Senior SaaS Engineer (`c0becd70-c09e-419e-a15f-5b40d48533e0`)\n- Junior Robotics Software Engineer (`0273ddad-6be2-4b0c-8e9e-5fb37ed6e1b8`)\n- Cyber Security Professional (`bad53b3a-a8e9-419a-8d8a-b3d15f9ed018`)\n- Robotics and Mechatronics Engineer (`9bd2c696-41af-4cdd-ba28-77d07b3f6545`)"
+        }
+      ],
+      "answer": "Found 4 job postings.\n\n- **Senior SaaS Engineer** (`c0becd70-c09e-419e-a15f-5b40d48533e0`): active\n- **Junior Robotics Software Engineer** (`0273ddad-6be2-4b0c-8e9e-5fb37ed6e1b8`): active\n- **Cyber Security Professional** (`bad53b3a-a8e9-419a-8d8a-b3d15f9ed018`): active\n- **Robotics and Mechatronics Engineer** (`9bd2c696-41af-4cdd-ba28-77d07b3f6545`): active",
+      "used_tools": [
+        "list_job_postings"
+      ],
+      "awaiting_confirmation": false,
+      "generic_fallback_detected": false,
+      "answered_directly": true
+    },
+    {
+      "id": 3,
+      "section": "A. Workspace and Job Discovery",
+      "prompt": "Which job listings are computer science related?",
+      "expected": "Classify the relevant postings and explain why they qualify.",
+      "scope_hint": "job",
+      "action_class": "read_or_direct_answer",
+      "tool_step_count": 1,
+      "tool_steps": [
+        {
+          "tool_name": "list_job_postings",
+          "risk_class": "read",
+          "status": "completed",
+          "arguments": {
+            "classification_hint": "cs_related"
+          },
+          "planner": "fallback",
+          "summary": "These job postings look computer-science-related:\n\n- Senior SaaS Engineer (`c0becd70-c09e-419e-a15f-5b40d48533e0`)\n- Junior Robotics Software Engineer (`0273ddad-6be2-4b0c-8e9e-5fb37ed6e1b8`)\n- Cyber Security Professional (`bad53b3a-a8e9-419a-8d8a-b3d15f9ed018`)\n- Robotics and Mechatronics Engineer (`9bd2c696-41af-4cdd-ba28-77d07b3f6545`)"
+        }
+      ],
+      "answer": "These job postings look computer-science-related:\n\n- **Senior SaaS Engineer** (`c0becd70-c09e-419e-a15f-5b40d48533e0`)\n- **Junior Robotics Software Engineer** (`0273ddad-6be2-4b0c-8e9e-5fb37ed6e1b8`)\n- **Cyber Security Professional** (`bad53b3a-a8e9-419a-8d8a-b3d15f9ed018`)\n- **Robotics and Mechatronics Engineer** (`9bd2c696-41af-4cdd-ba28-77d07b3f6545`)",
+      "used_tools": [
+        "list_job_postings"
+      ],
+      "awaiting_confirmation": false,
+      "generic_fallback_detected": false,
+      "answered_directly": true
+    },
+    {
+      "id": 4,
+      "section": "A. Workspace and Job Discovery",
+      "prompt": "Which job listing has the most candidates?",
+      "expected": "Aggregate candidate counts across all postings and name the highest-count posting.",
+      "scope_hint": "job",
+      "action_class": "read_or_direct_answer",
+      "tool_step_count": 1,
+      "tool_steps": [
+        {
+          "tool_name": "get_workspace_summary",
+          "risk_class": "read",
+          "status": "completed",
+          "arguments": {},
+          "planner": "fallback",
+          "summary": "Workspace coverage: 4 job postings, 29 candidates, 23 completed analyses.\n\n- Senior SaaS Engineer (`c0becd70-c09e-419e-a15f-5b40d48533e0`)\n- Junior Robotics Software Engineer (`0273ddad-6be2-4b0c-8e9e-5fb37ed6e1b8`)\n- Cyber Security Professional (`bad53b3a-a8e9-419a-8d8a-b3d15f9ed018`)\n- Robotics and Mechatronics Engineer (`9bd2c696-41af-4cdd-ba28-77d07b3f6545`)"
+        }
+      ],
+      "answer": "### Candidate Count by Job Posting\n\n`Robotics and Mechatronics Engineer` has the **most candidates** with **12** applicants.\n\n- `Robotics and Mechatronics Engineer`: 12 candidates\n- `Senior SaaS Engineer`: 9 candidates\n- `Junior Robotics Software Engineer`: 7 candidates\n- `Cyber Security Professional`: 1 candidates",
+      "used_tools": [
+        "get_workspace_summary"
+      ],
+      "awaiting_confirmation": false,
+      "generic_fallback_detected": false,
+      "answered_directly": true
+    },
+    {
+      "id": 5,
+      "section": "A. Workspace and Job Discovery",
+      "prompt": "Which job listing has the fewest candidates?",
+      "expected": "Aggregate candidate counts across all postings and name the lowest-count posting.",
+      "scope_hint": "job",
+      "action_class": "read_or_direct_answer",
+      "tool_step_count": 1,
+      "tool_steps": [
+        {
+          "tool_name": "get_workspace_summary",
+          "risk_class": "read",
+          "status": "completed",
+          "arguments": {},
+          "planner": "fallback",
+          "summary": "Workspace coverage: 4 job postings, 29 candidates, 23 completed analyses.\n\n- Senior SaaS Engineer (`c0becd70-c09e-419e-a15f-5b40d48533e0`)\n- Junior Robotics Software Engineer (`0273ddad-6be2-4b0c-8e9e-5fb37ed6e1b8`)\n- Cyber Security Professional (`bad53b3a-a8e9-419a-8d8a-b3d15f9ed018`)\n- Robotics and Mechatronics Engineer (`9bd2c696-41af-4cdd-ba28-77d07b3f6545`)"
+        }
+      ],
+      "answer": "### Candidate Count by Job Posting\n\n`Cyber Security Professional` has the **fewest candidates** with **1** applicants.\n\n- `Cyber Security Professional`: 1 candidates\n- `Junior Robotics Software Engineer`: 7 candidates\n- `Senior SaaS Engineer`: 9 candidates\n- `Robotics and Mechatronics Engineer`: 12 candidates",
+      "used_tools": [
+        "get_workspace_summary"
+      ],
+      "awaiting_confirmation": false,
+      "generic_fallback_detected": false,
+      "answered_directly": true
+    },
+    {
+      "id": 6,
+      "section": "A. Workspace and Job Discovery",
+      "prompt": "Summarize this workspace.",
+      "expected": "Return posting count, candidate count, completed-analysis count, and notable coverage gaps.",
+      "scope_hint": "workspace",
+      "action_class": "read_or_direct_answer",
+      "tool_step_count": 1,
+      "tool_steps": [
+        {
+          "tool_name": "get_workspace_summary",
+          "risk_class": "read",
+          "status": "completed",
+          "arguments": {},
+          "planner": "fallback",
+          "summary": "Workspace coverage: 4 job postings, 29 candidates, 23 completed analyses.\n\n- Senior SaaS Engineer (`c0becd70-c09e-419e-a15f-5b40d48533e0`)\n- Junior Robotics Software Engineer (`0273ddad-6be2-4b0c-8e9e-5fb37ed6e1b8`)\n- Cyber Security Professional (`bad53b3a-a8e9-419a-8d8a-b3d15f9ed018`)\n- Robotics and Mechatronics Engineer (`9bd2c696-41af-4cdd-ba28-77d07b3f6545`)"
+        }
+      ],
+      "answer": "### Workspace Summary\n\n- Job postings: **4**\n- Candidates: **29**\n- Completed analyses: **23**\n- Postings with no candidates: none",
+      "used_tools": [
+        "get_workspace_summary"
+      ],
+      "awaiting_confirmation": false,
+      "generic_fallback_detected": false,
+      "answered_directly": true
+    },
+    {
+      "id": 7,
+      "section": "A. Workspace and Job Discovery",
+      "prompt": "Show me the hiring context for Senior SaaS Engineer.",
+      "expected": "Resolve the posting by title and summarize the stored hiring context.",
+      "scope_hint": "workspace",
+      "action_class": "read_or_direct_answer",
+      "tool_step_count": 1,
+      "tool_steps": [
+        {
+          "tool_name": "get_job_posting",
+          "risk_class": "read",
+          "status": "completed",
+          "arguments": {
+            "job_posting_id": "c0becd70-c09e-419e-a15f-5b40d48533e0"
+          },
+          "planner": "fallback",
+          "summary": "Loaded job posting `Senior SaaS Engineer`.\n\nStatus: active\n\nOur platform team is scaling from 8 to 14 engineers this year. We need someone who can own end-to-end features, mentor mid-level devs, and drive architectural decisions. The team ships weekly and values pragmatic engineering over over-engineering."
+        }
+      ],
+      "answer": "### Hiring Context for `Senior SaaS Engineer`\n\nOur platform team is scaling from 8 to 14 engineers this year. We need someone who can own end-to-end features, mentor mid-level devs, and drive architectural decisions. The team ships weekly and values pragmatic engineering over over-engineering.",
+      "used_tools": [
+        "get_job_posting"
+      ],
+      "awaiting_confirmation": false,
+      "generic_fallback_detected": false,
+      "answered_directly": true
+    },
+    {
+      "id": 8,
+      "section": "A. Workspace and Job Discovery",
+      "prompt": "Which postings are inactive right now?",
+      "expected": "Return only inactive postings with status.",
+      "scope_hint": "workspace",
+      "action_class": "read_or_direct_answer",
+      "tool_step_count": 1,
+      "tool_steps": [
+        {
+          "tool_name": "get_workspace_summary",
+          "risk_class": "read",
+          "status": "completed",
+          "arguments": {},
+          "planner": "fallback",
+          "summary": "Workspace coverage: 4 job postings, 29 candidates, 23 completed analyses.\n\n- Senior SaaS Engineer (`c0becd70-c09e-419e-a15f-5b40d48533e0`)\n- Junior Robotics Software Engineer (`0273ddad-6be2-4b0c-8e9e-5fb37ed6e1b8`)\n- Cyber Security Professional (`bad53b3a-a8e9-419a-8d8a-b3d15f9ed018`)\n- Robotics and Mechatronics Engineer (`9bd2c696-41af-4cdd-ba28-77d07b3f6545`)"
+        }
+      ],
+      "answer": "All current job postings are active.",
+      "used_tools": [
+        "get_workspace_summary"
+      ],
+      "awaiting_confirmation": false,
+      "generic_fallback_detected": false,
+      "answered_directly": true
+    },
+    {
+      "id": 9,
+      "section": "A. Workspace and Job Discovery",
+      "prompt": "Show me the newest posting in this workspace.",
+      "expected": "Identify the latest posting by creation date.",
+      "scope_hint": "workspace",
+      "action_class": "read_or_direct_answer",
+      "tool_step_count": 1,
+      "tool_steps": [
+        {
+          "tool_name": "get_workspace_summary",
+          "risk_class": "read",
+          "status": "completed",
+          "arguments": {},
+          "planner": "fallback",
+          "summary": "Workspace coverage: 4 job postings, 29 candidates, 23 completed analyses.\n\n- Senior SaaS Engineer (`c0becd70-c09e-419e-a15f-5b40d48533e0`)\n- Junior Robotics Software Engineer (`0273ddad-6be2-4b0c-8e9e-5fb37ed6e1b8`)\n- Cyber Security Professional (`bad53b3a-a8e9-419a-8d8a-b3d15f9ed018`)\n- Robotics and Mechatronics Engineer (`9bd2c696-41af-4cdd-ba28-77d07b3f6545`)"
+        }
+      ],
+      "answer": "The newest posting is `Senior SaaS Engineer`.",
+      "used_tools": [
+        "get_workspace_summary"
+      ],
+      "awaiting_confirmation": false,
+      "generic_fallback_detected": false,
+      "answered_directly": true
+    },
+    {
+      "id": 10,
+      "section": "A. Workspace and Job Discovery",
+      "prompt": "Show postings that mention robotics.",
+      "expected": "Search posting titles and descriptions and return matching roles.",
+      "scope_hint": "workspace",
+      "action_class": "read_or_direct_answer",
+      "tool_step_count": 1,
+      "tool_steps": [
+        {
+          "tool_name": "search_resumes",
+          "risk_class": "read",
+          "status": "completed",
+          "arguments": {
+            "query": "postings that mention robotics"
+          },
+          "planner": "fallback",
+          "summary": "Found 0 resume matches for `postings that mention robotics`.\n\n"
+        }
+      ],
+      "answer": "I did not find resume matches for `postings that mention robotics`.",
+      "used_tools": [
+        "search_resumes"
+      ],
+      "awaiting_confirmation": false,
+      "generic_fallback_detected": false,
+      "answered_directly": true
+    }
+  ]
+}

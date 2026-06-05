@@ -62,7 +62,7 @@ from app.schemas.org import (
 from app.security import create_access_token, hash_password, verify_password
 from app.services.analysis_queue import analysis_queue_manager
 from app.services.llm_client import LLMClient
-from app.services.model_router import ProviderConfig
+from app.services.model_router import ModelRouter, ProviderConfig
 from app.services.orchestrator import PipelineOrchestrator
 from app.services.resume_ingestion import (
     ResumeIngestionError,
@@ -733,19 +733,32 @@ async def _ingest_candidate_pdf_without_triage(
 
 
 def _provider_from_settings(settings: UserAgentSettings) -> ProviderConfig | None:
-    if not settings.encrypted_api_key:
-        return None
-    try:
-        api_key = decrypt_secret(settings.encrypted_api_key)
-    except Exception:
-        return None
+    router = ModelRouter.from_env()
+    provider_name = (settings.provider or router.primary.provider or "chutes").strip().lower()
+    default_provider = router.primary
+    if router.fallback is not None and provider_name == router.fallback.provider:
+        default_provider = router.fallback
+
+    api_key = ""
+    if settings.encrypted_api_key:
+        try:
+            api_key = decrypt_secret(settings.encrypted_api_key).strip()
+        except Exception:
+            api_key = ""
+    if not api_key:
+        if provider_name == router.primary.provider:
+            api_key = router.primary.api_key
+        elif router.fallback is not None and provider_name == router.fallback.provider:
+            api_key = router.fallback.api_key
+        else:
+            api_key = default_provider.api_key
     if not api_key.strip():
         return None
     return ProviderConfig(
-        provider=settings.provider or "chutes",
-        base_url=settings.base_url or "https://llm.chutes.ai/v1",
+        provider=provider_name or default_provider.provider,
+        base_url=settings.base_url or default_provider.base_url,
         api_key=api_key.strip(),
-        model=settings.model or "deepseek-ai/DeepSeek-V3.2-TEE",
+        model=settings.model or default_provider.model,
     )
 
 

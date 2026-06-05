@@ -1,0 +1,93 @@
+{
+  "summary": {
+    "user_email": "chutes_4bdb7947-29c8-5f16-bb18-f98cb18fb6e3@oauth.jobest.local",
+    "planner_mode": "current",
+    "case_count": 3,
+    "cases_with_tools": 3,
+    "cases_with_confirmation": 0,
+    "generic_fallback_count": 0,
+    "direct_answer_count": 3
+  },
+  "results": [
+    {
+      "id": 1,
+      "section": "A. Workspace and Job Discovery",
+      "prompt": "List all job postings in this workspace.",
+      "expected": "Return every posting title with identifiers or clear names, without requiring extra context.",
+      "scope_hint": "workspace",
+      "action_class": "read_or_direct_answer",
+      "tool_step_count": 1,
+      "tool_steps": [
+        {
+          "tool_name": "list_job_postings",
+          "risk_class": "read",
+          "status": "completed",
+          "arguments": {},
+          "planner": "fallback",
+          "summary": "Found 4 job postings.\n\n- Senior SaaS Engineer (`c0becd70-c09e-419e-a15f-5b40d48533e0`)\n- Junior Robotics Software Engineer (`0273ddad-6be2-4b0c-8e9e-5fb37ed6e1b8`)\n- Cyber Security Professional (`bad53b3a-a8e9-419a-8d8a-b3d15f9ed018`)\n- Robotics and Mechatronics Engineer (`9bd2c696-41af-4cdd-ba28-77d07b3f6545`)"
+        }
+      ],
+      "answer": "Found 4 job postings.\n\n- **Senior SaaS Engineer** (`c0becd70-c09e-419e-a15f-5b40d48533e0`): active\n- **Junior Robotics Software Engineer** (`0273ddad-6be2-4b0c-8e9e-5fb37ed6e1b8`): active\n- **Cyber Security Professional** (`bad53b3a-a8e9-419a-8d8a-b3d15f9ed018`): active\n- **Robotics and Mechatronics Engineer** (`9bd2c696-41af-4cdd-ba28-77d07b3f6545`): active",
+      "used_tools": [
+        "list_job_postings"
+      ],
+      "awaiting_confirmation": false,
+      "generic_fallback_detected": false,
+      "answered_directly": true
+    },
+    {
+      "id": 2,
+      "section": "A. Workspace and Job Discovery",
+      "prompt": "Show all active job postings.",
+      "expected": "Return only active postings and omit inactive ones.",
+      "scope_hint": "workspace",
+      "action_class": "read_or_direct_answer",
+      "tool_step_count": 1,
+      "tool_steps": [
+        {
+          "tool_name": "list_job_postings",
+          "risk_class": "read",
+          "status": "completed",
+          "arguments": {},
+          "planner": "fallback",
+          "summary": "Found 4 job postings.\n\n- Senior SaaS Engineer (`c0becd70-c09e-419e-a15f-5b40d48533e0`)\n- Junior Robotics Software Engineer (`0273ddad-6be2-4b0c-8e9e-5fb37ed6e1b8`)\n- Cyber Security Professional (`bad53b3a-a8e9-419a-8d8a-b3d15f9ed018`)\n- Robotics and Mechatronics Engineer (`9bd2c696-41af-4cdd-ba28-77d07b3f6545`)"
+        }
+      ],
+      "answer": "Found 4 job postings.\n\n- **Senior SaaS Engineer** (`c0becd70-c09e-419e-a15f-5b40d48533e0`): active\n- **Junior Robotics Software Engineer** (`0273ddad-6be2-4b0c-8e9e-5fb37ed6e1b8`): active\n- **Cyber Security Professional** (`bad53b3a-a8e9-419a-8d8a-b3d15f9ed018`): active\n- **Robotics and Mechatronics Engineer** (`9bd2c696-41af-4cdd-ba28-77d07b3f6545`): active",
+      "used_tools": [
+        "list_job_postings"
+      ],
+      "awaiting_confirmation": false,
+      "generic_fallback_detected": false,
+      "answered_directly": true
+    },
+    {
+      "id": 3,
+      "section": "A. Workspace and Job Discovery",
+      "prompt": "Which job listings are computer science related?",
+      "expected": "Classify the relevant postings and explain why they qualify.",
+      "scope_hint": "job",
+      "action_class": "read_or_direct_answer",
+      "tool_step_count": 1,
+      "tool_steps": [
+        {
+          "tool_name": "list_job_postings",
+          "risk_class": "read",
+          "status": "completed",
+          "arguments": {
+            "classification_hint": "cs_related"
+          },
+          "planner": "fallback",
+          "summary": "These job postings look computer-science-related:\n\n- Senior SaaS Engineer (`c0becd70-c09e-419e-a15f-5b40d48533e0`)\n- Junior Robotics Software Engineer (`0273ddad-6be2-4b0c-8e9e-5fb37ed6e1b8`)\n- Cyber Security Professional (`bad53b3a-a8e9-419a-8d8a-b3d15f9ed018`)\n- Robotics and Mechatronics Engineer (`9bd2c696-41af-4cdd-ba28-77d07b3f6545`)"
+        }
+      ],
+      "answer": "These job postings look computer-science-related:\n\n- **Senior SaaS Engineer** (`c0becd70-c09e-419e-a15f-5b40d48533e0`)\n- **Junior Robotics Software Engineer** (`0273ddad-6be2-4b0c-8e9e-5fb37ed6e1b8`)\n- **Cyber Security Professional** (`bad53b3a-a8e9-419a-8d8a-b3d15f9ed018`)\n- **Robotics and Mechatronics Engineer** (`9bd2c696-41af-4cdd-ba28-77d07b3f6545`)",
+      "used_tools": [
+        "list_job_postings"
+      ],
+      "awaiting_confirmation": false,
+      "generic_fallback_detected": false,
+      "answered_directly": true
+    }
+  ]
+}
