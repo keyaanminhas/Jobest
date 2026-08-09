@@ -102,6 +102,7 @@ Current backend dependencies are installed from `backend/requirements.txt`:
 - `python-jose[cryptography]`
 - `email-validator`
 - `beautifulsoup4`
+- `reportlab`
 
 ### Frontend npm packages
 
@@ -258,7 +259,8 @@ There is also a CV generator script:
 python3 backend/scripts/generate_demo_cvs.py
 ```
 
-- `backend/scripts/generate_demo_cvs.py` currently writes to a hardcoded Windows path.
+- By default, `backend/scripts/generate_demo_cvs.py` writes to `backend/storage/generated_demo_cvs/`.
+- Use `--output-dir <path>` or `JOBEST_DEMO_CV_OUTPUT_DIR=<path>` to generate the demo PDFs somewhere else.
 - The bundled PDFs under `backend/storage/demo_cvs/` are ready to use immediately.
 
 ## Quick Walkthrough

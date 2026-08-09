@@ -1,11 +1,28 @@
+from __future__ import annotations
+
+import argparse
+import os
 from pathlib import Path
 
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.units import mm
-from reportlab.pdfgen import canvas
+try:
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import mm
+    from reportlab.pdfgen import canvas
+except ModuleNotFoundError:
+    A4 = None
+    mm = 1
+    canvas = None
 
 
-OUTPUT_DIR = Path(r"C:\Users\Keyaan\Documents\code\AI Marathon Hackathon\Demo CV Pack")
+DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parents[1] / "storage" / "generated_demo_cvs"
+
+
+def require_reportlab() -> None:
+    if A4 is None or canvas is None:
+        raise SystemExit(
+            "Missing dependency: reportlab. Install backend dependencies with "
+            "`pip install -r backend/requirements.txt`."
+        )
 
 
 CANDIDATES = [
@@ -563,9 +580,9 @@ def draw_bullets(pdf: canvas.Canvas, items: list[str], x: float, y: float, width
     return y
 
 
-def build_pdf(data: dict) -> None:
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    path = OUTPUT_DIR / data["filename"]
+def build_pdf(data: dict, output_dir: Path) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    path = output_dir / data["filename"]
     pdf = canvas.Canvas(str(path), pagesize=A4)
     width, height = A4
     x = 18 * mm
@@ -618,10 +635,27 @@ def build_pdf(data: dict) -> None:
     pdf.save()
 
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Generate synthetic demo CV PDFs for Jobest.")
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=Path(os.environ.get("JOBEST_DEMO_CV_OUTPUT_DIR", DEFAULT_OUTPUT_DIR)),
+        help=(
+            "Directory for generated PDFs. Defaults to JOBEST_DEMO_CV_OUTPUT_DIR "
+            "or backend/storage/generated_demo_cvs."
+        ),
+    )
+    return parser.parse_args()
+
+
 def main() -> None:
+    args = parse_args()
+    require_reportlab()
+    output_dir = args.output_dir.expanduser().resolve()
     for candidate in CANDIDATES:
-        build_pdf(candidate)
-    print(f"Generated {len(CANDIDATES)} demo CV PDFs in {OUTPUT_DIR}")
+        build_pdf(candidate, output_dir)
+    print(f"Generated {len(CANDIDATES)} demo CV PDFs in {output_dir}")
 
 
 if __name__ == "__main__":

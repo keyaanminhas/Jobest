@@ -13,3 +13,4 @@ python-jose[cryptography]
 email-validator
 aiosqlite
 beautifulsoup4
+reportlab
